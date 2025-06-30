@@ -2,6 +2,9 @@ import customtkinter as ctk
 from tkinter import messagebox
 from tkinter import ttk
 from backend import database as db
+import pandas as pd
+from tkinter import filedialog
+
 
 
 # classe para o formulario de adicionar/editar
@@ -96,6 +99,8 @@ class VehicleView(ctk.CTkFrame):
         ctk.CTkButton(button_frame, text="Editar", command=self.abrir_editar).pack(side="left", padx=10)
         ctk.CTkButton(button_frame, text="Remover", command=self.deletar_veiculo, fg_color="#c0392b",
                       hover_color="#e74c3c").pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Exportar para Excel", command=self.exportar_para_excel).pack(side="right", padx=10)
+
 
         self.carregar_dados()
 
@@ -121,6 +126,7 @@ class VehicleView(ctk.CTkFrame):
 
         item_id = self.tree.item(selected_item)["values"][0]
 
+
         # Buscar todos os dados do veiculo, nao apenas os da tabela
         veiculos = db.listar_veiculos()
         dados_veiculo = next((v for v in veiculos if v['id'] == item_id), None)
@@ -137,3 +143,31 @@ class VehicleView(ctk.CTkFrame):
         if messagebox.askyesno("Confirmação", f"Tem certeza que deseja remover o veículo ID {id_veiculo}?"):
             db.deletar_veiculo(id_veiculo)
             self.carregar_dados()
+
+    def exportar_para_excel(self):
+        veiculos = db.listar_veiculos()
+        if not veiculos:
+            messagebox.showinfo("Informação", "Não há veículos para exportar.")
+            return
+
+        dados_veiculos = [dict(veiculo) for veiculo in veiculos]
+
+        df = pd.DataFrame(dados_veiculos)
+
+        #Abrir caixa de dialogo para o usuário escolher onde salvar
+
+        caminho_arquivo = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("Todos os arquivos", "*.*")],
+            title="Salvar lista de veículos como..."
+        )
+
+        if not caminho_arquivo:
+            #Usuário cancelou a operação
+            return
+
+        try:
+            df.to_excel(caminho_arquivo, index=False, engine="openpyxl")
+            messagebox.showinfo("Sucesso", f"Dados exportados com sucesso para:\n{caminho_arquivo}")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Ocorreu um erro ao exportar os dados: {e}")

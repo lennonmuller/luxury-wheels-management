@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import seaborn as sns
 from backend import analytics as an
+from backend import database as db
 
 
 class DashboardView(ctk.CTkFrame):
@@ -31,12 +32,17 @@ class DashboardView(ctk.CTkFrame):
 
         # Layout com grid
         self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
         # --- Criar e posicionar os gráficos ---
         self.plotar_faturamento_mensal()
         self.plotar_veiculos_por_status()
+
+        #Chamada de alertas
+        self.criar_secao_alertas()
+
         # Adicione chamadas para outros gráficos aqui
 
     def plotar_grafico(self, fig, row, col):
@@ -88,3 +94,25 @@ class DashboardView(ctk.CTkFrame):
 
         fig.tight_layout()
         self.plotar_grafico(fig, 0, 1)
+
+    def criar_secao_alertas(self):
+        """ Cria e popula a área de alertas de revisão"""
+        alertas_frame = ctk.CTkFrame(self)
+        alertas_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
+
+        label_titulo = ctk.CTkLabel(alertas_frame, text="Alertas - Veículos Próximos da Revisão (15 dias)", font=("Arial", 16, "bold"))
+        label_titulo.pack(pady=(10, 5), padx=10, anchor="w")
+
+        veiculos_revisao = db.listar_veiculos_para_revisao()
+
+        if not veiculos_revisao:
+            label_sem_alertas = ctk.CTkLabel(alertas_frame, text="Nenhum veículo necessita de revisão em breve.")
+            label_sem_alertas.pack(pady=10, padx=10, anchor="w")
+            return
+
+        for veiculo in veiculos_revisao:
+            data_formatada = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
+            linha_alerta = f"ID: {veiculo['id']} | {veiculo['marca']} {veiculo['modelo']} (Placa: {veiculo['placa']}) - Revisão em: {data_formatada}\n"
+            textbox.insert("end", linha_alerta)
+
+        textbox.configure(state="disabled")  # Bloqueia a edição

@@ -1,14 +1,12 @@
-# src/backend/database.py
-
 import sqlite3
 import bcrypt
 import os
-from datetime import datetime
+from datetime import date, timedelta
+
 
 # --- Configuração do Banco de Dados ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(os.path.dirname(BASE_DIR), 'data', 'luxury_wheels.db')
-
 
 def conectar_bd():
     """Cria e retorna uma conexão com o banco de dados."""
@@ -94,6 +92,15 @@ def deletar_veiculo(id_veiculo):
         cursor.execute(sql, (id_veiculo,))
         conn.commit()
 
+def listar_veiculos_para_revisao(dias_ate_revisao=15):
+    """Lista veículos cuja próxima revisão está dentro do intervalo de dias especificado."""
+    data_limite = date.today() + timedelta(days=dias_ate_revisao)
+    sql = "SELECT id, marca, modelo, placa, data_proxima_revisao FROM veiculos WHERE data_proxima_revisao <= ? ORDER BY data_proxima_revisao ASC"
+
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (data_limite.strftime('%d/%m/%Y'),))
+        return cursor.fetchall()
 
 # --- CRUD: Clientes ---
 def adicionar_cliente(nome_completo, cpf, telefone, email, cnh):
