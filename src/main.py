@@ -24,25 +24,25 @@ class App(ctk.CTk):
         self._current_frame.pack(fill="both", expand=True)
 
     def show_login_view(self):
-        """Mostra a tela de login no container principal """
         self.geometry("400x450")
         self.resizable(False, False)
-        self.switch_frame(LoginView)
+        # O uso de 'after' agenda a troca, evitando o TclError
+        self.after(10, lambda: self.switch_frame(LoginView))
 
     def show_main_view(self):
         self.geometry("1200x700")
         self.resizable(True, True)
-        self.switch_frame(MainView)
+        self.after(10, lambda: self.switch_frame(MainView))
 
     def show_register_view(self):
         self.geometry("400x500")
         self.resizable(False, False)
-        self.switch_frame(RegisterView)
+        self.after(10, lambda: self.switch_frame(RegisterView))
 
     def show_client_view(self):
         self.geometry("400x500")
         self.resizable(False, False)
-        self.switch_frame(ClientView)
+        self.after(10, lambda: self.switch_frame(ClientView))
 
 
 if __name__ == "__main__":

@@ -64,7 +64,7 @@ class VehicleView(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
 
-        self.label = ctk.CTkFrame(self, text="Gestão de Veículos", font=("Arial", 24, "bold"))
+        self.label = ctk.CTkLabel(self, text="Gestão de Veículos", font=("Arial", 24, "bold"))
         self.label.pack(pady=10, padx=10)
 
         # frame oara a tabela e botoes
@@ -78,7 +78,7 @@ class VehicleView(ctk.CTkFrame):
         style.configure("Treeview.Heading", background="#565b5e", foreground="white", font=("Arial", 10, "bold"))
         style.map('Treeview', background=[('selected', '#22559b')])
 
-        self.tree = ttk.TreeView(content_frame,
+        self.tree = ttk.Treeview(content_frame,
                                  columns=("ID", "Marca", "Modelo", "Ano", "Placa", "Status", "Valor Diária"),
                                  show="headings")
 
@@ -101,12 +101,14 @@ class VehicleView(ctk.CTkFrame):
 
     def carregar_dados(self):
         # limpa a tabela
-        for item in self.tree.get.children():
-            self.tree.get.delete(item)
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        veiculos = db.listar_veiculos()
         # Carrega os dados do banco
-        for v in db.listar_veiculos():
-            self.tree.insert("", "end", values=(v["id"], v["marca"], v["modelo"], v["ano"], v["placa"], v["status"],
-                                                f"$ {v["valor_diaria"]:.2f}"))
+        for v in veiculos:
+            valor_formatado = f"$ {v['valor_diaria']:.2f}".replace('.', ',')
+            self.tree.insert("", "end", values=(v["id"], v["marca"], v["modelo"], v["ano"], v["placa"], v["status"], valor_formatado))
 
     def abrir_adicionar(self):
         FormularioVeiculo(self, self.controller)
