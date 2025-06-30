@@ -1,8 +1,5 @@
 # 🚗 Luxury Wheels - Sistema de Gestão e Business Intelligence
 
-![Luxury Wheels App Demo](URL_DO_SEU_GIF_AQUI)
-*Demonstração da aplicação em funcionamento.*
-
 ---
 
 ## 📄 Sobre o Projeto
@@ -23,7 +20,7 @@ Este projeto foi construído como parte do meu desenvolvimento contínuo em enge
 *   **Dashboard de Business Intelligence:**
     *   Gráficos visuais para **Faturamento Mensal**.
     *   Análise da **Distribuição de Veículos por Status**.
-    *   _(Futuro: Adicionar outros KPIs relevantes aqui)._
+    *   
 *   **Sistema de Alertas Proativo:**
     *   Notificações no dashboard para veículos com **revisão próxima** (próximos 15 dias).
 *   **Exportação de Dados:**
