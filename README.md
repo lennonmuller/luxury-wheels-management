@@ -60,3 +60,38 @@ Siga os passos abaixo para executar o projeto em seu ambiente local.
 ```bash
 git clone https://github.com/lennonmuller/luxury-wheels-management.git
 cd luxury-wheels-management
+```
+
+**2. Crie e Ative um Ambiente Virtual:**
+```bash
+# Windows
+python -m venv .venv
+.\.venv\Scripts\activate
+
+# macOS / Linux
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**3. Instale as Dependências:**
+Crie um arquivo requirements.txt com o comando pip freeze > requirements.txt e adicione-o ao seu repositório. As dependências são:
+```bash
+bcrypt
+customtkinter
+matplotlib
+numpy
+openpyxl
+pandas
+seaborn
+```
+Em seguida, instale-as:
+```bash
+pip install -r requirements.txt
+```
+
+**4. Execute a Aplicação:**
+```bash
+python src/main.py
+```
+
+_Credenciais de Teste: Você pode criar um usuário através da tela de registro ou adicionar um manualmente. Ex: admin@lw.com, senha 1234.
