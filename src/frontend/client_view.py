@@ -1,6 +1,5 @@
 import customtkinter as ctk
-from tkinter import messagebox
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from backend import database as db
 
 
@@ -12,30 +11,33 @@ class FormularioCliente(ctk.CTkToplevel):
         self.dados_cliente = dados_cliente
 
         self.title("Editar Cliente" if dados_cliente else "Adicionar Cliente")
-        self.geometry("400x400")
+        self.geometry("400x450")
         self.resizable(width=False, height=False)
         self.grab_set()
 
-        self.campos = ["Nome", "Email", "Telefone", "NIF"]
+        self.campos = ["Nome Completo", "Email", "Telefone", "NIF", "CC"]
         self.entradas = {}
 
         for campo in self.campos:
-            label = ctk.CTkLabel(self, text=campo)
-            label.pack(padx=20, pady=(10, 0), anchor="w")
-            entry = ctk.CTkEntry(self, width=360)
-            entry.pack(padx=20, pady=(0, 10), fill="x")
+            frame = ctk.CTkFrame(self)
+            frame.pack(padx=20, pady=(10, 0), fill="x")
+            label = ctk.CTkLabel(frame, text=campo, width=100, anchor="w")
+            label.pack(side="left")
+            entry = ctk.CTkEntry(frame)
+            entry.pack(side="left", fill="x", expand=True)
 
             if dados_cliente:
-                chave = campo.lower()
-                entry.insert(0, dados_cliente.get(chave, ""))
+                chave_coluna = campo.lower().replace(" ", "_")
+                entry.insert(0, dados_cliente[chave_coluna])
 
-            self.entradas[campo.lower()] = entry
+
+            self.entradas[campo.lower().replace(" ", "_")] = entry
 
         self.btn_salvar = ctk.CTkButton(self, text="Salvar", command=self.salvar)
         self.btn_salvar.pack(pady=20)
 
     def salvar(self):
-        valores = {k: e.get() for k, e in self.entradas.items()}
+        valores = {chave: entry.get() for chave, entry in self.entradas.items()}
 
         if not all(valores.values()):
             messagebox.showwarning("Atenção", "Preencha todos os campos!")
@@ -44,7 +46,10 @@ class FormularioCliente(ctk.CTkToplevel):
         if self.dados_cliente:
             db.atualizar_cliente(self.dados_cliente['id'], **valores)
         else:
-            db.adicionar_cliente(**valores)
+            if not db.adicionar_cliente(**valores):
+                messagebox.showerror("Erro", "Erro ao adicionar cliente. Verifique se o NIF, Email ou CC já existem.")
+                return
+
 
         self.parent_view.carregar_dados()
         self.destroy()
@@ -69,7 +74,7 @@ class ClientView(ctk.CTkFrame):
         style.map('Treeview', background=[('selected', '#22559b')])
 
         self.tree = ttk.Treeview(content_frame,
-                                 columns=("ID", "Nome", "Email", "Telefone", "NIF"),
+                                 columns=("ID", "Nome", "Email", "Telefone", "NIF", "CC"),
                                  show="headings")
 
         for col in self.tree["columns"]:
@@ -92,9 +97,9 @@ class ClientView(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        for cliente in db.listar_clientes():
-            self.tree.insert("", "end", values=(cliente["id"], cliente["nome"], cliente["email"], cliente["telefone"],
-                                                cliente["nif"]))
+        clientes = db.listar_clientes()
+        for c in clientes:
+            self.tree.insert("", "end", values=(c["id"], c["nome_completo"], c["email"], c["telefone"], c["nif"], c["cc"]))
 
     def abrir_adicionar(self):
         FormularioCliente(self, self.controller)

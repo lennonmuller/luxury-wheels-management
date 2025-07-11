@@ -1,5 +1,5 @@
 # src/frontend/dashboard_view.py
-
+from datetime import date, timedelta, datetime
 import customtkinter as ctk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -109,6 +109,9 @@ class DashboardView(ctk.CTkFrame):
             label_sem_alertas = ctk.CTkLabel(alertas_frame, text="Nenhum veículo necessita de revisão em breve.")
             label_sem_alertas.pack(pady=10, padx=10, anchor="w")
             return
+
+        textbox = ctk.CTkTextbox(alertas_frame, height=100)
+        textbox.pack(pady=5, padx=10, fill="x", expand=True)
 
         for veiculo in veiculos_revisao:
             data_formatada = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')

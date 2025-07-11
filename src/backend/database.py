@@ -103,12 +103,12 @@ def listar_veiculos_para_revisao(dias_ate_revisao=15):
         return cursor.fetchall()
 
 # --- CRUD: Clientes ---
-def adicionar_cliente(nome_completo, cpf, telefone, email, cnh):
-    sql = "INSERT INTO clientes (nome_completo, cpf, telefone, email, cnh) VALUES (?, ?, ?, ?, ?)"
+def adicionar_cliente(nome_completo, telefone, email, nif, cc):
+    sql = "INSERT INTO clientes (nome_completo, telefone, email, nif, cc) VALUES (?, ?, ?, ?, ?)"
     with conectar_bd() as conn:
         cursor = conn.cursor()
         try:
-            cursor.execute(sql, (nome_completo, cpf, telefone, email, cnh))
+            cursor.execute(sql, (nome_completo, telefone, email, nif, cc))
             conn.commit()
             return True
         except sqlite3.IntegrityError:
@@ -116,7 +116,7 @@ def adicionar_cliente(nome_completo, cpf, telefone, email, cnh):
 
 
 def listar_clientes():
-    sql = "SELECT * FROM clientes ORDER BY nome_completo"  # Corrigido: nome_completo
+    sql = "SELECT * FROM clientes ORDER BY nome_completo"
     with conectar_bd() as conn:
         cursor = conn.cursor()
         cursor.execute(sql)
@@ -204,7 +204,7 @@ def deletar_reserva(id_reserva):
 
 # --- CRUD: Formas de Pagamento ---
 def listar_formas_pagamento():
-    sql = "SELECT * FROM formas_pagamento ORDER BY nome"  # Corrigido
+    sql = "SELECT * FROM formas_pagamento ORDER BY nome"
     with conectar_bd() as conn:
         cursor = conn.cursor()
         cursor.execute(sql)

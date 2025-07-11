@@ -1,15 +1,10 @@
-# src/frontend/main_view.py
-
 import customtkinter as ctk
-# Importe as views que serão usadas no menu
 from .dashboard_view import DashboardView
 from .vehicle_view import VehicleView
-
-
-# Futuramente: from .client_view import ClientView, etc.
+from .client_view import ClientView
 
 class MainView(ctk.CTkFrame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, user_name):
         super().__init__(parent)
         self.controller = controller
 
@@ -25,21 +20,28 @@ class MainView(ctk.CTkFrame):
         self.label_menu = ctk.CTkLabel(self.menu_frame, text="Luxury Wheels", font=("Arial", 20, "bold"))
         self.label_menu.grid(row=0, column=0, padx=20, pady=(20, 10))
 
+        welcome_text = f"Bem vindo(a),\n{user_name.split(' ')[0]}!"
+        self.label_welcome = ctk.CTkLabel(self.menu_frame, text=welcome_text, font=("Arial", 16))
+        self.label_welcome.grid(row=1, column=0, padx=20, pady=(10, 20), sticky="ew")
+
+
+
         # --- Botões do Menu ---
         self.btn_dashboard = ctk.CTkButton(self.menu_frame, text="Dashboard", command=self.show_dashboard_view)
-        self.btn_dashboard.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        self.btn_dashboard.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
 
         self.btn_veiculos = ctk.CTkButton(self.menu_frame, text="Veículos", command=self.show_vehicle_view)
-        self.btn_veiculos.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.btn_veiculos.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
         # CORRIGIDO: Typo em "CTKButton" e "Clentes", e adicionado um placeholder
         self.btn_clientes = ctk.CTkButton(self.menu_frame, text="Clientes", command=self.show_clientes_view)
-        self.btn_clientes.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
+        self.btn_clientes.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
 
-        # O .grid_rowconfigure(4,...) acima empurra este botão para o final
+        self.menu_frame.grid_rowconfigure(5, weight=1)
+
         self.btn_logout = ctk.CTkButton(self.menu_frame, text="Logout", command=self.logout, fg_color="#c0392b",
                                         hover_color="#e74c3c")
-        self.btn_logout.grid(row=5, column=0, padx=20, pady=20, sticky="sew")
+        self.btn_logout.grid(row=6, column=0, padx=20, pady=20, sticky="sew")
 
         # --- Frame de Conteúdo Principal ---
         self.content_frame = ctk.CTkFrame(self)
@@ -64,11 +66,7 @@ class MainView(ctk.CTkFrame):
 
     # NOVO: Placeholder para a função do botão de clientes
     def show_clientes_view(self):
-        # Limpa o frame de conteúdo para mostrar que o botão funciona
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-        label = ctk.CTkLabel(self.content_frame, text="Página de Gestão de Clientes", font=("Arial", 28, "bold"))
-        label.pack(pady=100)
+        self.show_view(ClientView)
 
     def logout(self):
         self.controller.show_login_view()
