@@ -4,7 +4,7 @@ from .vehicle_view import VehicleView
 from .client_view import ClientView
 
 class MainView(ctk.CTkFrame):
-    def __init__(self, parent, controller, user_name):
+    def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
 
@@ -15,16 +15,13 @@ class MainView(ctk.CTkFrame):
         # --- Frame do Menu Lateral ---
         self.menu_frame = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.menu_frame.grid(row=0, column=0, rowspan=2, sticky="nsw")
-        self.menu_frame.grid_rowconfigure(4, weight=1)  # Empurra o logout para baixo
+        self.menu_frame.grid_rowconfigure(5, weight=1)  # Empurra o logout para baixo
 
         self.label_menu = ctk.CTkLabel(self.menu_frame, text="Luxury Wheels", font=("Arial", 20, "bold"))
         self.label_menu.grid(row=0, column=0, padx=20, pady=(20, 10))
 
-        welcome_text = f"Bem vindo(a),\n{user_name.split(' ')[0]}!"
-        self.label_welcome = ctk.CTkLabel(self.menu_frame, text=welcome_text, font=("Arial", 16))
+        self.label_welcome = ctk.CTkLabel(self.menu_frame, text="Bem-vindo(a)!", font=("Arial", 16))
         self.label_welcome.grid(row=1, column=0, padx=20, pady=(10, 20), sticky="ew")
-
-
 
         # --- Botões do Menu ---
         self.btn_dashboard = ctk.CTkButton(self.menu_frame, text="Dashboard", command=self.show_dashboard_view)
@@ -33,11 +30,8 @@ class MainView(ctk.CTkFrame):
         self.btn_veiculos = ctk.CTkButton(self.menu_frame, text="Veículos", command=self.show_vehicle_view)
         self.btn_veiculos.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
-        # CORRIGIDO: Typo em "CTKButton" e "Clentes", e adicionado um placeholder
         self.btn_clientes = ctk.CTkButton(self.menu_frame, text="Clientes", command=self.show_clientes_view)
         self.btn_clientes.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
-
-        self.menu_frame.grid_rowconfigure(5, weight=1)
 
         self.btn_logout = ctk.CTkButton(self.menu_frame, text="Logout", command=self.logout, fg_color="#c0392b",
                                         hover_color="#e74c3c")
@@ -48,6 +42,11 @@ class MainView(ctk.CTkFrame):
         self.content_frame.grid(row=0, column=1, rowspan=2, padx=20, pady=20, sticky="nsew")
 
         # Inicia mostrando o dashboard
+        self.show_dashboard_view()
+
+    def update_welcome_message(self, user_name):
+        welcome_text = f"Bem-vindo(a),\n{user_name.split(' ')[0]}!"
+        self.label_welcome.configure(text=welcome_text)
         self.show_dashboard_view()
 
     def show_view(self, view_class):

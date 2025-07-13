@@ -1,49 +1,62 @@
+# src/main.py (VERSÃO COM EMPILHAMENTO)
+
 import customtkinter as ctk
 from frontend.login_view import LoginView
 from frontend.register_view import RegisterView
 from frontend.main_view import MainView
-from src.frontend.client_view import ClientView
-
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Luxury Wheels - Sistema de Gestão")
-        self.geometry("1200x700")
-        self.resizable(True, True)
         ctk.set_appearance_mode("dark")
 
-        self._current_frame = None
-        self.show_login_view()
+        # Container principal onde todos os frames viverão
+        container = ctk.CTkFrame(self)
+        container.pack(side="top", fill="both", expand=True)
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
 
-    def switch_frame(self, frame_factory):
-        if self._current_frame:
-            self._current_frame.destroy()
+        self.frames = {}
+        self.current_user_name = "" # Para guardar o nome do usuário logado
 
-        self._current_frame = frame_factory(self, self)
-        self._current_frame.pack(fill="both", expand=True)
+        # Criar todas as telas uma vez e guardá-las no dicionário
+        for F in (LoginView, MainView, RegisterView):
+            frame_name = F.__name__
+            frame = F(container, self) # Passa o container e o controller
+            self.frames[frame_name] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
 
+        # Inicia mostrando a tela de login
+        self.show_frame("LoginView")
+
+    def show_frame(self, frame_name):
+        """Levanta o frame desejado para a frente."""
+        if frame_name == "MainView":
+            # Redimensiona a janela para a tela principal
+            self.geometry("1200x700")
+            self.resizable(True, True)
+            # ATUALIZA A MENSAGEM DE BOAS-VINDAS ANTES DE MOSTRAR
+            main_frame = self.frames["MainView"]
+            main_frame.update_welcome_message(self.current_user_name)
+        else:
+            # Redimensiona para as telas de auth
+            self.geometry("400x500")
+            self.resizable(False, False)
+
+        frame = self.frames[frame_name]
+        frame.tkraise()
+
+    # Mantenha os métodos de conveniência para serem chamados de outras views
     def show_login_view(self):
-        self.geometry("400x450")
-        self.resizable(False, False)
-        # O uso de 'after' agenda a troca, evitando o TclError
-        self.switch_frame(lambda parent, controller: LoginView(parent, controller))
+        self.show_frame("LoginView")
 
     def show_main_view(self, user_name="Usuário"):
-        self.geometry("1200x700")
-        self.resizable(True, True)
-        self.switch_frame(lambda parent, controller: MainView(parent, controller, user_name))
+        self.current_user_name = user_name # Salva o nome do usuário
+        self.show_frame("MainView")
 
     def show_register_view(self):
-        self.geometry("400x500")
-        self.resizable(False, False)
-        self.switch_frame(lambda parent, controller: LoginView(parent, controller))
-
-    def show_client_view(self):
-        self.geometry("400x500")
-        self.resizable(False, False)
-        self.after(10, lambda: self.switch_frame(ClientView))
-
+        self.show_frame("RegisterView")
 
 if __name__ == "__main__":
     app = App()
