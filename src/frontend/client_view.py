@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 from backend import database as db
@@ -90,6 +92,7 @@ class ClientView(ctk.CTkFrame):
         ctk.CTkButton(button_frame, text="Editar", command=self.abrir_editar).pack(side="left", padx=10)
         ctk.CTkButton(button_frame, text="Remover", command=self.deletar_cliente, fg_color="#c0392b",
                       hover_color="#e74c3c").pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Ver Histórico", command=self.ver_historico).pack(side="left", padx=10)
 
         self.carregar_dados()
 
@@ -126,3 +129,53 @@ class ClientView(ctk.CTkFrame):
         if messagebox.askyesno("Confirmação", f"Tem certeza que deseja remover o cliente ID {id_cliente}?"):
             db.deletar_cliente(id_cliente)
             self.carregar_dados()
+
+    def ver_historico(self):
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Aviso", "Selecione um cliente para ver historico.")
+            return
+
+        item_values = self.tree.item(selected_item)["values"]
+        id_cliente = item_values[0]
+        nome_cliente = item_values[1]
+
+        #Chama uma nova janela para exibir histórico
+        HistoricoClienteWindow(self, id_cliente, nome_cliente)
+
+class HistoricoClienteWindow(ctk.CTkToplevel):
+    def __init__(self, parent, id_cliente, nome_cliente):
+        super().__init__(parent)
+        self.title(f"Histórico de {nome_cliente}")
+        self.geometry("700x400")
+        self.grab_set()
+
+        reservas = db.buscar_reservas_por_cliente(id_cliente)
+        if not reservas:
+            ctk.CTkLabel(self, text="Este cliente não possui histórico de reservas.", font=("Arial", 16)).pack(pady=20)
+            return
+
+        textbox = ctk.CTkTextBox(self, state="normal", font=("Courier New", 12))
+        textbox.pack(fill="both", expand=True, padx=10, pady=10)
+
+        textbox.insert("end", f"{'VEÍCULO'.ljust(30)} | {'INÍCIO'.ljust(12)} | {'FIM'.ljust(12)} | STATUS\n")
+        textbox.insert("end", "="*70 + "\n")
+
+        hoje = datetime.date.today()
+
+        for r in reservas:
+            veiculo = f"{r['marca']} {r['modelo']} ({r['placa']})"
+            inicio = datetime.strptime(r['data_inicio'], '%Y/%m/%d %H:%M:%S').strftime('%d/%m/%Y')
+            fim = datetime.strptime(r['data_fim'], '%Y/%m/%d %H:%M:%S').strftime('%d/%m/%Y')
+            status = r['status_reserva'].upper()
+
+            # Destaca a reserva ativa
+            data_fim_obj = datatime.strptime(r['data_fim'], '%Y/%m/%d %H:%M:%S').date()
+            if status == 'ATIVA' and data_fim_obj >= hoje:
+                linha = f"-> {veiculo.ljust(27)} | {inicio.ljust(12)} | {fim.ljust(12)} | {status}\n"
+            else:
+                linha = f"   {veiculo.ljust(27)} | {inicio.ljust(12)} | {fim.ljust(12)} | {status}\n"
+
+                textbox.insert("end", linha)
+
+            textbox.configure(state="disabled")

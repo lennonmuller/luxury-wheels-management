@@ -102,6 +102,39 @@ def listar_veiculos_para_revisao(dias_ate_revisao=15):
         cursor.execute(sql, (data_limite.strftime('%d/%m/%Y'),))
         return cursor.fetchall()
 
+def buscar_veiculo_com_devolucao_hoje():
+    hoje_str = date.today().strftime('%Y/%m/%d')
+    sql = """
+            SELECT v.id FROM veiculos v
+            JOIN reservas r ON v.id = r.id_veiculo
+            WHERE r.status = 'ativa' AND DATE(r.data_fim) = ?
+        """
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (hoje_str,))
+        # Retorna um conjunto de IDs para busca rápida
+        return {row['id'] for row in cursor.fetchall()}
+
+def buscar_reservas_por_veiculo(id_veiculo):
+    sql = """
+        SELECT r.data_inicio, r.data_fim, c.nome_completo, c.nif
+        FROM reservas r
+        JOIN clientes c ON r.id_cliente = c.id
+        WHERE r.id_veiculo = ? ORDER BY r.data_inicio DESC
+    """
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (id_veiculo,))
+        return cursor.fetchall()
+
+def buscar_veiculo_por_id(id_veiculo):
+    """Busca um único veículo pelo seu ID."""
+    sql = "SELECT * FROM veiculos WHERE id = ?"
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (id_veiculo,))
+        return cursor.fetchone()
+
 # --- CRUD: Clientes ---
 def adicionar_cliente(nome_completo, telefone, email, nif, cc):
     sql = "INSERT INTO clientes (nome_completo, telefone, email, nif, cc) VALUES (?, ?, ?, ?, ?)"
@@ -201,6 +234,27 @@ def deletar_reserva(id_reserva):
         cursor.execute(sql, (id_reserva,))
         conn.commit()
 
+# Em src/backend/database.py
+def buscar_reservas_por_cliente(id_cliente):
+    """Busca todas as reservas de um cliente, juntando com dados do veículo."""
+    sql = """
+        SELECT
+            r.id,
+            r.data_inicio,
+            r.data_fim,
+            r.status AS status_reserva,
+            v.marca,
+            v.modelo,
+            v.placa
+        FROM reservas r
+        JOIN veiculos v ON r.id_veiculo = v.id
+        WHERE r.id_cliente = ?
+        ORDER BY r.data_inicio DESC
+    """
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (id_cliente,))
+        return cursor.fetchall()
 
 # --- CRUD: Formas de Pagamento ---
 def listar_formas_pagamento():

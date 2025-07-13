@@ -113,9 +113,19 @@ class DashboardView(ctk.CTkFrame):
         textbox = ctk.CTkTextbox(alertas_frame, height=100)
         textbox.pack(pady=5, padx=10, fill="x", expand=True)
 
+        textbox.tag_config("VENCIDO", foreground="#E57373")
+        textbox.tag_config("ALERTA",foreground="#FFD54F")
+
+        hoje = date.today()
+
         for veiculo in veiculos_revisao:
-            data_formatada = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
+            data_revisao = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').date()
+            data_formatada = data_revisao.strftime("%d/%m/%Y")
             linha_alerta = f"ID: {veiculo['id']} | {veiculo['marca']} {veiculo['modelo']} (Placa: {veiculo['placa']}) - Revisão em: {data_formatada}\n"
-            textbox.insert("end", linha_alerta)
+
+            if data_revisao < hoje:
+                textbox.insert("end", f"[VENCIDO]{linha_alerta}", "VENCIDO")
+            else:
+                textbox.insert("end", f"[ALERTA] {linha_alerta}", "ALERTA")
 
         textbox.configure(state="disabled")  # Bloqueia a edição

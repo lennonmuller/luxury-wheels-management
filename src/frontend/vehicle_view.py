@@ -38,6 +38,8 @@ class FormularioVeiculo(ctk.CTkToplevel):
         self.btn_salvar = ctk.CTkButton(self, text="Salvar", command=self.salvar)
         self.btn_salvar.pack(pady=20)
 
+        self.tree.tag_configure('devolucao_hoje', background='#5D4037', foreground='white')
+
     def salvar(self):
         valores = {chave: entry.get() for chave, entry in self.entradas.items()}
 
@@ -61,6 +63,41 @@ class FormularioVeiculo(ctk.CTkToplevel):
             self.parent_view.carregar_dados()  # Atualiza a tabela na tela principal
             self.destroy()  # Fecha a tabela do formulário
 
+
+class HistoricoVeiculoWindow(ctk.CTkToplevel):
+    def __init__(self, parent, id_veiculo, nome_veiculo):
+        super().__init__(parent)
+        self.title(f"Histórico de Aluguel - {nome_veiculo}")
+        self.geometry("700x400")
+        self.grab_set()
+
+        reservas = db.buscar_reservas_por_veiculo(id_veiculo)
+
+        if not reservas:
+            ctk.CTkLabel(self, text="Este veículo não possui histórico de aluguéis.", font=("Arial", 16)).pack(pady=20)
+            return
+
+        textbox = ctk.CTkTextbox(self, state="normal", font=("Courier New", 12))
+        textbox.pack(fill="both", expand=True, padx=10, pady=10)
+
+        textbox.insert("end", f"{'CLIENTE'.ljust(30)} | {'NIF'.ljust(15)} | {'INÍCIO'.ljust(12)} | {'FIM'.ljust(12)}\n")
+        textbox.insert("end", "=" * 75 + "\n")
+
+        for r in reservas:
+            cliente = r['nome_completo']
+            nif = r['nif']
+
+            try:
+                inicio = datetime.strptime(r['data_inicio'], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%y')
+                fim = datetime.strptime(r['data_fim'], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%y')
+            except (ValueError, TypeError):
+                inicio = str(r['data_inicio'])
+                fim = str(r['data_fim'])
+
+            linha = f"{cliente.ljust(30)} | {nif.ljust(15)} | {inicio.ljust(12)} | {fim.ljust(12)}\n"
+            textbox.insert("end", linha)
+
+        textbox.configure(state="disabled")
 
 class VehicleView(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -100,6 +137,7 @@ class VehicleView(ctk.CTkFrame):
         ctk.CTkButton(button_frame, text="Remover", command=self.deletar_veiculo, fg_color="#c0392b",
                       hover_color="#e74c3c").pack(side="left", padx=10)
         ctk.CTkButton(button_frame, text="Exportar para Excel", command=self.exportar_para_excel).pack(side="right", padx=10)
+        ctk.CTkButton(button_frame, text="Ver Histórico", command=self.ver_historico).pack(side="left", padx=10)
 
 
         self.carregar_dados()
@@ -114,6 +152,13 @@ class VehicleView(ctk.CTkFrame):
         for v in veiculos:
             valor_formatado = f"$ {v['valor_diaria']:.2f}".replace('.', ',')
             self.tree.insert("", "end", values=(v["id"], v["marca"], v["modelo"], v["ano"], v["placa"], v["status"], valor_formatado))
+
+        veiculos_devolucao_hoje = db.buscar_veiculo_com_devolucao_hoje()
+        tag = ''
+        if v['id'] in veiculos_devolucao_hoje:
+            tag = 'devolucao_hoje'
+
+        self.tree.insert("", "end", values=(...), tags=(tag,))
 
     def abrir_adicionar(self):
         FormularioVeiculo(self, self.controller)
@@ -171,3 +216,22 @@ class VehicleView(ctk.CTkFrame):
             messagebox.showinfo("Sucesso", f"Dados exportados com sucesso para:\n{caminho_arquivo}")
         except Exception as e:
             messagebox.showerror("Erro", f"Ocorreu um erro ao exportar os dados: {e}")
+
+    def ver_historico(self):
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Aviso", "Selecione um veículo para ver histórico.")
+            return
+
+        id_veiculo = self.tree.item(selected_item)["values"][0]
+        dados_veiculo = db.buscar_veiculo_por_id(id_veiculo)
+
+        if not dados_veiculo:
+            messagebox.showerror("Erro", "Veículo não encontrado no banco de dados.")
+            return
+
+        nome_veiculo = f"{dados_veiculo['marca']} {dados_veiculo['modelo']} (Placa: {dados_veiculo['placa']})"
+
+
+        # Chama uma nova janela para exibir histórico
+        HistoricoVeiculoWindow(self, id_veiculo, nome_veiculo)
