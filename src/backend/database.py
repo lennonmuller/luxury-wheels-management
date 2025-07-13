@@ -102,7 +102,7 @@ def listar_veiculos_para_revisao(dias_ate_revisao=15):
         cursor.execute(sql, (data_limite.strftime('%d/%m/%Y'),))
         return cursor.fetchall()
 
-def buscar_veiculo_com_devolucao_hoje():
+def buscar_veiculos_com_devolucao_hoje():
     hoje_str = date.today().strftime('%Y/%m/%d')
     sql = """
             SELECT v.id FROM veiculos v
@@ -263,3 +263,49 @@ def listar_formas_pagamento():
         cursor = conn.cursor()
         cursor.execute(sql)
         return cursor.fetchall()
+
+def importar_veiculos_de_csv(caminho_arquivo):
+    """
+        Importa veículos de um arquivo CSV para o banco de dados.
+        Retorna a contagem de sucessos e falhas.
+        """
+    import pandas as pd  # Importação local para manter o resto do módulo leve
+
+    sucessos = 0
+    falhas = 0
+    erros_detalhados = []
+
+    try:
+        df = pd.read_csv(caminho_arquivo, sep=';', dtype=str)
+
+        # Validação básica das colunas esperadas
+        colunas_obrigatorias = {'marca', 'modelo', 'ano', 'placa', 'cor', 'valor_diaria', 'data_proxima_revisao'}
+        if not colunas_obrigatorias.issubset(df.columns):
+            return 0, 0, [f"Arquivo CSV deve conter as colunas: {', '.join(colunas_obrigatorias)}"]
+
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
+            for index, row in df.iterrows():
+                try:
+                    # Tenta inserir cada linha na tabela de veículos
+                    sql = "INSERT INTO veiculos (marca, modelo, ano, placa, cor, valor_diaria, data_proxima_revisao, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'disponível')"
+                    cursor.execute(sql, (
+                        row['marca'], row['modelo'], int(row['ano']), row['placa'],
+                        row['cor'], float(row['valor_diaria']), row['data_proxima_revisao']
+                    ))
+                    sucessos += 1
+                except (sqlite3.IntegrityError, ValueError, KeyError) as e:
+                    # Captura erros de placa duplicada, conversão de tipo ou coluna faltando
+                    falhas += 1
+                    erros_detalhados.append(f"Linha {index + 2}: Placa '{row.get('placa', 'N/A')}' - Erro: {e}")
+
+            conn.commit()
+
+    except FileNotFoundError:
+        erros_detalhados.append("Arquivo não encontrado.")
+        return 0, 1, erros_detalhados
+    except Exception as e:
+        erros_detalhados.append(f"Erro inesperado ao processar o arquivo: {e}")
+        return sucessos, falhas + (len(df) - sucessos - falhas), erros_detalhados
+
+    return sucessos, falhas, erros_detalhados

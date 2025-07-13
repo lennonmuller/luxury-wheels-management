@@ -38,8 +38,6 @@ class FormularioVeiculo(ctk.CTkToplevel):
         self.btn_salvar = ctk.CTkButton(self, text="Salvar", command=self.salvar)
         self.btn_salvar.pack(pady=20)
 
-        self.tree.tag_configure('devolucao_hoje', background='#5D4037', foreground='white')
-
     def salvar(self):
         valores = {chave: entry.get() for chave, entry in self.entradas.items()}
 
@@ -126,6 +124,9 @@ class VehicleView(ctk.CTkFrame):
             self.tree.heading(col, text=col)
             self.tree.column(col, width=150, anchor="center")
 
+        self.tree.tag_configure('devolucao_hoje', background='#5D4037', foreground='white')
+        self.tree.tag_configure('manutencao', background='#4A148C', foreground='white')  # Exemplo para outra cor
+
         self.tree.pack(pady=20, padx=10, fill="both", expand=True)
 
         # Botões
@@ -138,6 +139,7 @@ class VehicleView(ctk.CTkFrame):
                       hover_color="#e74c3c").pack(side="left", padx=10)
         ctk.CTkButton(button_frame, text="Exportar para Excel", command=self.exportar_para_excel).pack(side="right", padx=10)
         ctk.CTkButton(button_frame, text="Ver Histórico", command=self.ver_historico).pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Importar Frota (CSV)", command=self.importar_frota).pack(side="left", padx=10)
 
 
         self.carregar_dados()
@@ -147,18 +149,23 @@ class VehicleView(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        veiculos_devolucao_hoje = db.buscar_veiculos_com_devolucao_hoje()
         veiculos = db.listar_veiculos()
-        # Carrega os dados do banco
+
         for v in veiculos:
-            valor_formatado = f"$ {v['valor_diaria']:.2f}".replace('.', ',')
-            self.tree.insert("", "end", values=(v["id"], v["marca"], v["modelo"], v["ano"], v["placa"], v["status"], valor_formatado))
+            tag = ''  # Tag padrão
+            if v['status'] == 'manutenção':
+                tag = 'manutencao'
+            elif v['id'] in veiculos_devolucao_hoje:
+                tag = 'devolucao_hoje'
 
-        veiculos_devolucao_hoje = db.buscar_veiculo_com_devolucao_hoje()
-        tag = ''
-        if v['id'] in veiculos_devolucao_hoje:
-            tag = 'devolucao_hoje'
+            # Formatação dos valores para exibição
+            valor_formatado = f"R$ {v['valor_diaria']:.2f}"
+            status_formatado = v['status'].capitalize()
 
-        self.tree.insert("", "end", values=(...), tags=(tag,))
+            self.tree.insert("", "end", values=(
+                v["id"], v["marca"], v["modelo"], v["ano"], v["placa"], status_formatado, valor_formatado
+            ), tags=(tag,))
 
     def abrir_adicionar(self):
         FormularioVeiculo(self, self.controller)
@@ -235,3 +242,28 @@ class VehicleView(ctk.CTkFrame):
 
         # Chama uma nova janela para exibir histórico
         HistoricoVeiculoWindow(self, id_veiculo, nome_veiculo)
+
+    def importar_frota(self):
+        """Abre um diálogo para selecionar um arquivo CSV e iniciar a importação."""
+        caminho_arquivo = filedialog.askopenfilename(
+            title="Selecione o arquivo CSV da frota",
+            filetypes=[("Arquivos CSV", "*.csv")]
+        )
+
+        if not caminho_arquivo:
+            return  # Usuário cancelou
+
+        if not messagebox.askyesno("Confirmação",
+                                   "Você tem certeza que deseja importar os veículos deste arquivo? Placas duplicadas serão ignoradas."):
+            return
+
+        sucessos, falhas, erros = db.importar_veiculos_de_csv(caminho_arquivo)
+
+        mensagem_final = f"Importação Concluída!\n\n- Veículos importados com sucesso: {sucessos}\n- Linhas com erro (ignoradas): {falhas}"
+
+        if erros:
+            erros_preview = "\n".join(erros[:5])
+            mensagem_final += f"\n\nDetalhes dos primeiros erros:\n{erros_preview}"
+
+        messagebox.showinfo("Resultado da Importação", mensagem_final)
+        self.carregar_dados()  # Atualiza a tabela com os novos veículos
