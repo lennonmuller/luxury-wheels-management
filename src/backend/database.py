@@ -175,38 +175,59 @@ def deletar_cliente(id_cliente):
 
 
 # --- CRUD: Reservas ---
+
 def adicionar_reserva(id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim):
-    conn = conectar_bd()
-    if not conn: return False
-    cursor = conn.cursor()
+    """
+    Adiciona uma nova reserva e atualiza o status do veículo.
+    Operação transacional e robusta usando gerenciador de contexto.
+    """
+    sql_get_veiculo = "SELECT valor_diaria, status FROM veiculos WHERE id = ?"
+    sql_insert_reserva = """
+        INSERT INTO reservas (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'ativa')
+    """
+    sql_update_veiculo = "UPDATE veiculos SET status = 'alugado' WHERE id = ?"
+
+
     try:
-        cursor.execute("SELECT valor_diaria, status FROM veiculos WHERE id = ?", (id_veiculo,))
-        veiculo = cursor.fetchone()
-        if not veiculo or veiculo['status'] != 'disponível':
-            return False
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
 
-        d_inicio = datetime.strptime(data_inicio, '%Y-%m-%d')
-        d_fim = datetime.strptime(data_fim, '%Y-%m-%d')
-        num_dias = (d_fim - d_inicio).days
-        if num_dias <= 0: return False
 
-        valor_total = veiculo['valor_diaria'] * num_dias
+            cursor.execute(sql_get_veiculo, (id_veiculo,))
+            veiculo = cursor.fetchone()
+            if not veiculo or veiculo['status'] != 'disponível':
+                print(f"Erro: Veículo {id_veiculo} não está disponível para reserva.")
+                return False
 
-        sql_insert_reserva = "INSERT INTO reservas (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total, status) VALUES (?, ?, ?, ?, ?, ?, 'ativa')"
-        cursor.execute(sql_insert_reserva,
-                       (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total))
 
-        sql_update_veiculo = "UPDATE veiculos SET status = 'alugado' WHERE id = ?"
-        cursor.execute(sql_update_veiculo, (id_veiculo,))
+            valor_diaria = veiculo['valor_diaria']
+            # Assume que o formato da data já está correto (YYYY-MM-DD)
+            d_inicio = datetime.strptime(data_inicio, '%Y-%m-%d')
+            d_fim = datetime.strptime(data_fim, '%Y-%m-%d')
+            num_dias = (d_fim - d_inicio).days
+            if num_dias <= 0:
+                print("Erro: A data de fim deve ser posterior à data de início.")
+                return False
 
-        conn.commit()
-        return True
-    except (sqlite3.IntegrityError, ValueError, Exception) as e:
-        print(f"Erro ao adicionar reserva: {e}")
-        conn.rollback()
+            valor_total = valor_diaria * num_dias
+
+
+            cursor.execute(sql_insert_reserva,
+                           (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total))
+
+            cursor.execute(sql_update_veiculo, (id_veiculo,))
+
+            return True
+
+    except sqlite3.IntegrityError as e:
+        # Ocorre se id_cliente ou outra FK for inválida. O rollback é automático com 'with' em caso de exceção.
+        print(f"Erro de integridade ao criar reserva: {e}")
         return False
-    finally:
-        if conn: conn.close()
+    except (ValueError, Exception) as e:
+        # Captura outros erros (ex: formato de data inválido)
+        print(f"Um erro inesperado ocorreu ao criar a reserva: {e}")
+        return False
 
 
 def listar_reservas():
