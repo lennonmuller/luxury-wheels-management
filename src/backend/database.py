@@ -92,16 +92,6 @@ def deletar_veiculo(id_veiculo):
         cursor.execute(sql, (id_veiculo,))
         conn.commit()
 
-def listar_veiculos_para_revisao(dias_ate_revisao=15):
-    """Lista veículos cuja próxima revisão está dentro do intervalo de dias especificado."""
-    data_limite = date.today() + timedelta(days=dias_ate_revisao)
-    sql = "SELECT id, marca, modelo, placa, data_proxima_revisao FROM veiculos WHERE data_proxima_revisao <= ? ORDER BY data_proxima_revisao ASC"
-
-    with conectar_bd() as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql, (data_limite.strftime('%d/%m/%Y'),))
-        return cursor.fetchall()
-
 def buscar_veiculos_com_devolucao_hoje():
     hoje_str = date.today().strftime('%Y/%m/%d')
     sql = """
@@ -330,3 +320,33 @@ def importar_veiculos_de_csv(caminho_arquivo):
         return sucessos, falhas + (len(df) - sucessos - falhas), erros_detalhados
 
     return sucessos, falhas, erros_detalhados
+
+def buscar_revisoes_proximas(dias_limite=15):
+    """Busca veículos com revisão agendada entre hjoje e a data limite"""
+    hoje = date.today()
+    data_limite = hoje + timedelta(days=dias_limite)
+    sql = """
+            SELECT id, marca, modelo, placa, data_proxima_revisao 
+            FROM veiculos 
+            WHERE data_proxima_revisao BETWEEN ? AND ?
+            ORDER BY data_proxima_revisao ASC
+        """
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (hoje.strftime('%Y-%m-%d'), data_limite.strftime('%Y-%m-%d')))
+        return cursor.fetchall()
+
+
+def buscar_revisoes_vencidas():
+    """Busca veículos cuja data de revisão já passou e não foi atualizada."""
+    hoje = date.today()
+    sql = """
+            SELECT id, marca, modelo, placa, data_proxima_revisao 
+            FROM veiculos 
+            WHERE data_proxima_revisao < ?
+            ORDER BY data_proxima_revisao DESC
+        """
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (hoje.strftime('%Y-%m-%d'),))
+        return cursor.fetchall()

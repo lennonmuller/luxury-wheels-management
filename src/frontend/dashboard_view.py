@@ -1,4 +1,3 @@
-# src/frontend/dashboard_view.py
 from datetime import date, timedelta, datetime
 import customtkinter as ctk
 import matplotlib.pyplot as plt
@@ -12,7 +11,6 @@ class DashboardView(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
-        # NOVO: Lista para manter referência aos canvases dos gráficos
         self.graficos_canvas = []
 
         # Configura o estilo dos gráficos para o tema da aplicação
@@ -96,36 +94,47 @@ class DashboardView(ctk.CTkFrame):
         self.plotar_grafico(fig, 0, 1)
 
     def criar_secao_alertas(self):
-        """ Cria e popula a área de alertas de revisão"""
+        """Cria e popula a área de alertas, agora com lógica no backend."""
         alertas_frame = ctk.CTkFrame(self)
         alertas_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
-        label_titulo = ctk.CTkLabel(alertas_frame, text="Alertas - Veículos Próximos da Revisão (15 dias)", font=("Arial", 16, "bold"))
+        label_titulo = ctk.CTkLabel(alertas_frame, text="Painel de Controle de Revisões", font=("Arial", 16, "bold"))
         label_titulo.pack(pady=(10, 5), padx=10, anchor="w")
 
-        veiculos_revisao = db.listar_veiculos_para_revisao()
+        revisoes_vencidas = db.buscar_revisoes_vencidas()
+        revisoes_proximas = db.buscar_revisoes_proximas()
 
-        if not veiculos_revisao:
-            label_sem_alertas = ctk.CTkLabel(alertas_frame, text="Nenhum veículo necessita de revisão em breve.")
-            label_sem_alertas.pack(pady=10, padx=10, anchor="w")
+        if not revisoes_vencidas and not revisoes_proximas:
+            ctk.CTkLabel(alertas_frame, text="✅ Nenhum veículo necessita de atenção imediata.").pack(pady=10, padx=10,
+                                                                                                     anchor="w")
             return
 
-        textbox = ctk.CTkTextbox(alertas_frame, height=100)
+        # Usamos uma fonte monoespaçada para melhor alinhamento
+        textbox = ctk.CTkTextbox(alertas_frame, height=120, font=("Courier New", 12))
         textbox.pack(pady=5, padx=10, fill="x", expand=True)
 
-        textbox.tag_config("VENCIDO", foreground="#E57373")
-        textbox.tag_config("ALERTA",foreground="#FFD54F")
+        # CORREÇÃO: Removido o argumento 'font' de tag_config
+        # O destaque principal será pela cor.
+        textbox.tag_config("VENCIDO", foreground="#e53935")  # Vermelho para vencidos
+        textbox.tag_config("ALERTA", foreground="#ffb300")  # Âmbar para alertas
+        textbox.tag_config("INFO", foreground="gray")  # Cinza para os títulos das seções
 
-        hoje = date.today()
+        if revisoes_vencidas:
+            textbox.insert("end", "--- REVISÕES VENCIDAS ---\n", "INFO")
+            for veiculo in revisoes_vencidas:
+                data_formatada = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
+                linha_alerta = f"ID:{veiculo['id']:<3} | {veiculo['marca']} {veiculo['modelo']} ({veiculo['placa']}) - Venceu em: {data_formatada}\n"
+                textbox.insert("end", linha_alerta, "VENCIDO")
 
-        for veiculo in veiculos_revisao:
-            data_revisao = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').date()
-            data_formatada = data_revisao.strftime("%d/%m/%Y")
-            linha_alerta = f"ID: {veiculo['id']} | {veiculo['marca']} {veiculo['modelo']} (Placa: {veiculo['placa']}) - Revisão em: {data_formatada}\n"
+        if revisoes_proximas:
+            if revisoes_vencidas:  # Adiciona um espaço se houver as duas seções
+                textbox.insert("end", "\n")
 
-            if data_revisao < hoje:
-                textbox.insert("end", f"[VENCIDO]{linha_alerta}", "VENCIDO")
-            else:
-                textbox.insert("end", f"[ALERTA] {linha_alerta}", "ALERTA")
+            textbox.insert("end", f"--- PRÓXIMAS REVISÕES ({db.buscar_revisoes_proximas.__defaults__[0]} dias) ---\n",
+                           "INFO")
+            for veiculo in revisoes_proximas:
+                data_formatada = datetime.strptime(veiculo['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
+                linha_alerta = f"ID:{veiculo['id']:<3} | {veiculo['marca']} {veiculo['modelo']} ({veiculo['placa']}) - Agendada para: {data_formatada}\n"
+                textbox.insert("end", linha_alerta, "ALERTA")
 
-        textbox.configure(state="disabled")  # Bloqueia a edição
+        textbox.configure(state="disabled")
