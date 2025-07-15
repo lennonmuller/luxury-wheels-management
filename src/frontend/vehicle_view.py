@@ -16,7 +16,7 @@ class FormularioVeiculo(ctk.CTkToplevel):
         self.dados_veiculo = dados_veiculo
 
         self.title("Editar Veiculo" if dados_veiculo else "Adicionar Veiculo")
-        self.geometry("400x550")
+        self.geometry("400x600")
         self.resizable(width=False, height=False)
         self.grab_set()  # mantem o foco na janela
 
@@ -48,15 +48,17 @@ class FormularioVeiculo(ctk.CTkToplevel):
         try:
             # Validação simples
             valores['ano'] = int(valores['ano'])
-            valores['valor_diaria'] = float(valores['valor_diaria'])
+            valores['valor_diaria'] = float(valores['valor_diaria'].replace(",", "."))
         except ValueError:
             messagebox.showerror("Erro", "Ano e Valor da Diária devem ser números")
             return
 
         if self.dados_veiculo:  # modo edição
-            db.adicionar_veiculo(self.dados_veiculo['id'], **valores)
+            db.atualizar_veiculo(self.dados_veiculo['id'], **valores)
+            messagebox.showinfo("Sucesso", "Veículo atualizado com sucesso!")
         else:  # modo adição
             db.adicionar_veiculo(**valores)
+            messagebox.showinfo("Sucesso", "Novo veículo adicionado a frota!")
 
             self.parent_view.carregar_dados()  # Atualiza a tabela na tela principal
             self.destroy()  # Fecha a tabela do formulário

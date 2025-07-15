@@ -1,8 +1,9 @@
-# src/frontend/login_view.py
 
 import customtkinter as ctk
 from backend import database as db
 from backend import config_manager as cfg
+from PIL import Image
+import os
 
 
 class LoginView(ctk.CTkFrame):
@@ -10,6 +11,15 @@ class LoginView(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
 
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'assets', 'logo.png')
+
+        logo_image = ctk.CTkImage(light_image=Image.open(logo_path),
+                                  dark_image=Image.open(logo_path),
+                                  size=(100, 50))
+
+        # Widget para exibir a imagem
+        logo_label = ctk.CTkLabel(self, image=logo_image, text="")
+        logo_label.pack(pady=(40, 20))
         self.label = ctk.CTkLabel(self, text="Login - Luxury Wheels", font=("Arial", 24, "bold"))
         self.label.pack(pady=20, padx=10)
 
