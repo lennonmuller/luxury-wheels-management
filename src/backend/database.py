@@ -1,7 +1,7 @@
 import sqlite3
 import bcrypt
 import os
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 
 # --- Configuração do Banco de Dados ---
@@ -349,4 +349,48 @@ def buscar_revisoes_vencidas():
     with conectar_bd() as conn:
         cursor = conn.cursor()
         cursor.execute(sql, (hoje.strftime('%Y-%m-%d'),))
+        return cursor.fetchall()
+
+def importar_clientes_de_csv(caminho_arquivo):
+    import pandas as pd
+
+    sucessos = 0
+    falhas = 0
+    erros_detalhados = []
+
+    try:
+        df = pd.read_csv(caminho_arquivo, sep=';', dtype=str)
+
+        colunas_obrigatorias = {'nome_completo', 'nif', 'telefone', 'email', 'cc'}
+        if not colunas_obrigatorias.issubset(df.columns):
+            return 0, 0, [f"Arquivo CSV deve conter as colunas: {', '.join(colunas_obrigatorias)}"]
+
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
+            for index, row in df.iterrows():
+                try:
+                    if adicionar_cliente(
+                        row['nome_completo'], row['nif'], row['telefone'], row['email'], row['cc']):
+                        sucessos += 1
+                    else:
+                        falhas += 1
+                        erros_detalhados.append(f"Linha{index + 2}: NIF/Email/CC '{row.get('nif', 'N/A')}' provavelmente já existe.")
+
+                except (KeyError) as e:
+                    falhas += 1
+                    erros_detalhados.append(f"Linha{index + 2}: Coluna faltando - Erro: {e}")
+
+            conn.commit()
+
+    except Exception as e:
+        erros_detalhados.append(f"Erro inesperado ao processar o arquivo: {e}")
+        return sucessos, falhas, erros_detalhados
+    return sucessos, falhas, erros_detalhados
+
+def listar_veiculos_disponiveis():
+    """Retorna uma lista de todos os veículos com status 'disponível'."""
+    sql = "SELECT * FROM veiculos WHERE status = 'disponível' ORDER BY marca, modelo"
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
         return cursor.fetchall()

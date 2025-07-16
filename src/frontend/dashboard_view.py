@@ -62,7 +62,7 @@ class DashboardView(ctk.CTkFrame):
 
         if not faturamento.empty:
             faturamento.index = faturamento.index.astype(str)
-            sns.barplot(x=faturamento.index, y=faturamento.values, ax=ax, palette="viridis")
+            sns.barplot(x=faturamento.index, y=faturamento.values, ax=ax, palette="viridis", hue=faturamento.index, legend=False)
             ax.set_title("Faturamento Mensal (R$)")
             ax.set_ylabel("Valor Total (R$)")
             ax.set_xlabel("Mês/Ano")
