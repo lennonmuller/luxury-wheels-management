@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import bcrypt
 import os
@@ -15,7 +16,7 @@ def conectar_bd():
         conn.row_factory = sqlite3.Row  # Permite acessar colunas por nome
         return conn
     except sqlite3.Error as e:
-        print(f"Erro ao conectar ao banco de dados: {e}")
+        logging.error(f"Erro ao conectar ao banco de dados: {e}", exc_info=True)
         return None
 
 
@@ -187,7 +188,7 @@ def adicionar_reserva(id_cliente, id_veiculo, id_forma_pagamento, data_inicio, d
             cursor.execute(sql_get_veiculo, (id_veiculo,))
             veiculo = cursor.fetchone()
             if not veiculo or veiculo['status'] != 'disponível':
-                print(f"Erro: Veículo {id_veiculo} não está disponível para reserva.")
+                logging.error(f"Erro: Veículo {id_veiculo} não está disponível para reserva.", exc_info=True)
                 return False
 
 
@@ -197,7 +198,7 @@ def adicionar_reserva(id_cliente, id_veiculo, id_forma_pagamento, data_inicio, d
             d_fim = datetime.strptime(data_fim, '%Y-%m-%d')
             num_dias = (d_fim - d_inicio).days
             if num_dias <= 0:
-                print("Erro: A data de fim deve ser posterior à data de início.")
+                logging.error("Erro: A data de fim deve ser posterior à data de início.", exc_info=True)
                 return False
 
             valor_total = valor_diaria * num_dias
@@ -212,11 +213,11 @@ def adicionar_reserva(id_cliente, id_veiculo, id_forma_pagamento, data_inicio, d
 
     except sqlite3.IntegrityError as e:
         # Ocorre se id_cliente ou outra FK for inválida. O rollback é automático com 'with' em caso de exceção.
-        print(f"Erro de integridade ao criar reserva: {e}")
+        logging.error(f"Erro de integridade ao criar reserva: {e}", exc_info=True)
         return False
     except (ValueError, Exception) as e:
         # Captura outros erros (ex: formato de data inválido)
-        print(f"Um erro inesperado ocorreu ao criar a reserva: {e}")
+        logging.error(f"Um erro inesperado ocorreu ao criar a reserva: {e}", exc_info=True)
         return False
 
 

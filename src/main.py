@@ -1,9 +1,9 @@
-# src/main.py (VERSÃO COM EMPILHAMENTO)
-
 import customtkinter as ctk
 from frontend.login_view import LoginView
 from frontend.register_view import RegisterView
 from frontend.main_view import MainView
+from backend.logger_config import setup_logging
+import logging
 
 class App(ctk.CTk):
     def __init__(self):
@@ -59,5 +59,9 @@ class App(ctk.CTk):
         self.show_frame("RegisterView")
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    setup_logging()
+    try:
+        app = App()
+        app.mainloop()
+    except Exception as e:
+        logging.critical("Ocorreu um erro fatal na aplicação!", exc_info=True)
