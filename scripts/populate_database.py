@@ -6,19 +6,25 @@ from faker import Faker
 from datetime import datetime, timedelta
 import os
 import sys
+import logging
 
-# Adiciona a pasta 'src' ao path para que possamos importar 'database' e 'config_manager'
+# Adiciona a pasta 'src' ao path para que possamos importar 'database'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from backend import database as db
+from faker.exceptions import UniquenessException
 
-# Inicializa o Faker para o Brasil
+# Configuração básica do logging para o script
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Faker para Portugal
 fake = Faker('pt_PT')
 
 
 def limpar_tabelas(conn):
     """Limpa todos os dados das tabelas para começar do zero."""
     cursor = conn.cursor()
-    print("Limpando tabelas existentes...")
+    logging.info("Limpando tabelas existentes...")
+    # A ordem é importante devido às chaves estrangeiras (reservas depende de clientes/veiculos)
     cursor.execute("DELETE FROM reservas;")
     cursor.execute("DELETE FROM veiculos;")
     cursor.execute("DELETE FROM clientes;")
@@ -28,28 +34,28 @@ def limpar_tabelas(conn):
     cursor.execute(
         "UPDATE sqlite_sequence SET seq = 0 WHERE name IN ('reservas', 'veiculos', 'clientes', 'utilizadores', 'formas_pagamento');")
     conn.commit()
-    print("Tabelas limpas.")
+    logging.info("Tabelas limpas.")
 
 
 def popular_dados_base(conn):
     """Popula dados essenciais como formas de pagamento e um usuário admin."""
     cursor = conn.cursor()
-    print("Populando dados base...")
+    logging.info("Populando dados base...")
     # Formas de Pagamento
     formas_pagamento = ['Cartão de Crédito', 'PIX', 'Dinheiro', 'Transferência Bancária']
     for forma in formas_pagamento:
         cursor.execute("INSERT INTO formas_pagamento (nome) VALUES (?)", (forma,))
 
     # Usuário Admin
-    db.adicionar_utilizador("Admin User", "admin@lw.com", "1234", "Gerente")
-    print("Dados base populados.")
-    conn.commit()
+    # ATUALIZADO: Passa a conexão 'conn' para a função
+    db.adicionar_utilizador("Admin User", "admin@lw.com", "1234", "Gerente", conn=conn)
 
+    logging.info("Dados base populados.")
 
 def popular_veiculos(conn, quantidade=50):
     """Gera e insere veículos fictícios."""
     cursor = conn.cursor()
-    print(f"Populando {quantidade} veículos...")
+    logging.info(f"Populando {quantidade} veículos...")
     marcas_modelos = {
         'Mercedes-Benz': ['A-Class', 'C-Class', 'E-Class', 'GLC'],
         'BMW': ['Série 3', 'Série 5', 'X1', 'X3', 'X5'],
@@ -75,77 +81,138 @@ def popular_veiculos(conn, quantidade=50):
             (marca, modelo, ano, placa, cor, round(valor_diaria, 2), data_revisao.strftime('%Y-%m-%d'))
         )
     conn.commit()
-    print("Veículos populados.")
+    logging.info("Veículos populados.")
 
 
-def popular_clientes(conn, quantidade=100):
+def popular_clientes(conn, quantidade=50):
     """Gera e insere clientes fictícios com dados portugueses."""
     cursor = conn.cursor()
-    print(f"Populando {quantidade} clientes (PT-PT)...")
-    for _ in range(quantidade):
+    logging.info(f"Populando {quantidade} clientes (PT-PT)...")
+    clientes_adicionados = 0
+    for _ in range(quantidade * 2):
+        if clientes_adicionados >= quantidade:
+            break
         try:
             nome = fake.name()
             email = fake.unique.email()
-            nif = fake.nif()
-            cc = f"{fake.random_number(digits=8, fix_len=True)}{random.choice('0123456789JABCDEFGHIKLMNPQRSTUVWXYZ')}{random.choice('0123456789JABCDEFGHIKLMNPQRSTUVWXYZ')}{random.choice('0123456789JABCDEFGHIKLMNPQRSTUVWXYZ')}{random.choice('0123456789JABCDEFGHIKLMNPQRSTUVWXYZ')}"
+
+            primeiro_digito = random.choice(['1', '2', '3'])
+            nif = primeiro_digito + "".join([str(random.randint(0, 9)) for _ in range(8)])
+            cc = str(fake.random_number(digits=8, fix_len=True))
 
             cursor.execute(
                 "INSERT INTO clientes (nome_completo, nif, telefone, email, cc) VALUES (?, ?, ?, ?, ?)",
                 (nome, nif, fake.phone_number(), email, cc)
             )
-        except sqlite3.IntegrityError:
-            # Ignora duplicatas que podem raramente acontecer e continua
+            clientes_adicionados += 1
+
+        except (sqlite3.IntegrityError, UniquenessException):
             continue
+
     conn.commit()
-    print("Clientes populados.")
+    logging.info(f"{clientes_adicionados} clientes populados.")
 
 
-def popular_reservas(conn, quantidade=200):
-    """Gera e insere reservas fictícias, vinculando clientes e veículos existentes."""
+def popular_reservas_avancado(conn, quantidade=150):
+    """
+    Gera e insere reservas de forma inteligente, respeitando a disponibilidade dos veículos.
+    """
+    logging.info(f"Populando {quantidade} reservas com lógica avançada...")
     cursor = conn.cursor()
-    print(f"Populando {quantidade} reservas...")
 
-    # Pega IDs existentes para criar links válidos
-    ids_clientes = [row[0] for row in cursor.execute("SELECT id FROM clientes").fetchall()]
-    ids_veiculos = [row[0] for row in cursor.execute("SELECT id FROM veiculos").fetchall()]
-    ids_pagamento = [row[0] for row in cursor.execute("SELECT id FROM formas_pagamento").fetchall()]
+    ids_clientes = [row['id'] for row in cursor.execute("SELECT id FROM clientes").fetchall()]
+    veiculos = cursor.execute("SELECT id, valor_diaria FROM veiculos").fetchall()
+    ids_pagamento = [row['id'] for row in cursor.execute("SELECT id FROM formas_pagamento").fetchall()]
 
-    for _ in range(quantidade):
-        id_cliente = random.choice(ids_clientes)
-        id_veiculo = random.choice(ids_veiculos)
-        id_forma_pagamento = random.choice(ids_pagamento)
+    if not ids_clientes or not veiculos:
+        logging.error("Não há clientes ou veículos suficientes para criar reservas.")
+        return
 
-        data_inicio = fake.date_time_between(start_date='-1y', end_date='+30d')
-        duracao = timedelta(days=random.randint(2, 15))
+    reservas_criadas = 0
+    tentativas = 0
+    max_tentativas = quantidade * 5
+
+    while reservas_criadas < quantidade and tentativas < max_tentativas:
+        tentativas += 1
+
+        veiculo_escolhido = random.choice(veiculos)
+        id_veiculo = veiculo_escolhido['id']
+
+        data_inicio = fake.date_time_between(start_date='-1y', end_date='+1m')
+        duracao = timedelta(days=random.randint(2, 10))
         data_fim = data_inicio + duracao
 
-        # Busca valor da diária para calcular o total
-        valor_diaria = cursor.execute("SELECT valor_diaria FROM veiculos WHERE id = ?", (id_veiculo,)).fetchone()[0]
-        valor_total = valor_diaria * duracao.days
+        cursor.execute("""
+            SELECT COUNT(*) FROM reservas
+            WHERE id_veiculo = ? AND (
+                (data_inicio BETWEEN ? AND ?) OR
+                (data_fim BETWEEN ? AND ?) OR
+                (? BETWEEN data_inicio AND data_fim)
+            )
+        """, (id_veiculo, data_inicio, data_fim, data_inicio, data_fim, data_inicio))
 
-        status = random.choices(['ativa', 'concluída', 'cancelada'], weights=[10, 85, 5], k=1)[0]
+        conflitos = cursor.fetchone()[0]
+
+        if conflitos > 0:
+            continue
+
+        id_cliente = random.choice(ids_clientes)
+        id_forma_pagamento = random.choice(ids_pagamento)
+        valor_total = veiculo_escolhido['valor_diaria'] * duracao.days
+        status = 'concluída'
+
+        hoje = datetime.now()
+        if data_inicio <= hoje < data_fim:
+            status = 'ativa'
+        elif data_inicio > hoje:
+            status = 'ativa'
+
+        if random.random() < 0.05:
+            status = 'cancelada'
 
         cursor.execute(
             "INSERT INTO reservas (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total, status)
+            (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, round(valor_total, 2), status)
         )
+        reservas_criadas += 1
+
     conn.commit()
-    print("Reservas populadas.")
+    logging.info(f"{reservas_criadas} reservas criadas com sucesso.")
+
+
+def atualizar_status_veiculos(conn):
+    """
+    Atualiza o status dos veículos com base nas reservas 'ativas' que estão ocorrendo hoje.
+    """
+    logging.info("Atualizando status dos veículos...")
+    cursor = conn.cursor()
+    hoje = datetime.now()
+
+    cursor.execute("UPDATE veiculos SET status = 'disponível'")
+    cursor.execute("""
+        SELECT id_veiculo FROM reservas 
+        WHERE status = 'ativa' AND ? BETWEEN data_inicio AND data_fim
+    """, (hoje,))
+
+    ids_veiculos_alugados = [row['id_veiculo'] for row in cursor.fetchall()]
+
+    if ids_veiculos_alugados:
+        placeholders = ','.join('?' for _ in ids_veiculos_alugados)
+        sql = f"UPDATE veiculos SET status = 'alugado' WHERE id IN ({placeholders})"
+        cursor.execute(sql, ids_veiculos_alugados)
+
+    conn.commit()
+    logging.info(f"{len(ids_veiculos_alugados)} veículos marcados como 'alugado'.")
 
 
 def main():
     """Função principal para executar todo o processo de população."""
-    # Usa a função de conexão do nosso módulo de database
     conn = db.conectar_bd()
-    if not conn:
-        print("Não foi possível conectar ao banco de dados.")
-        return
+    if not conn: return
 
-    # Confirmação do usuário para evitar destruição acidental de dados
-    resposta = input(
-        "ATENÇÃO: Este script irá apagar TODOS os dados do banco de dados atual. Deseja continuar? (s/N): ")
+    resposta = input("ATENÇÃO: Este script irá apagar TODOS os dados do banco. Deseja continuar? (s/N): ")
     if resposta.lower() != 's':
-        print("Operação cancelada.")
+        logging.info("Operação cancelada.")
         conn.close()
         return
 
@@ -153,11 +220,12 @@ def main():
         limpar_tabelas(conn)
         popular_dados_base(conn)
         popular_veiculos(conn, 50)
-        popular_clientes(conn, 100)
-        popular_reservas(conn, 200)
-        print("\nBanco de dados populado com sucesso!")
+        popular_clientes(conn, 50)
+        popular_reservas_avancado(conn, 150)
+        atualizar_status_veiculos(conn)
+        logging.info("\nBanco de dados populado com sucesso e status atualizado!")
     except Exception as e:
-        print(f"\nOcorreu um erro: {e}")
+        logging.error("Ocorreu um erro durante a população.", exc_info=True)
     finally:
         conn.close()
 

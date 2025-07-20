@@ -15,8 +15,9 @@ def get_reservas_df():
         return pd.DataFrame()
     df = pd.DataFrame(reservas, columns=['id', 'id_cliente', 'id_veiculo', 'id_forma_pagamento', 'data_inicio', 'data_fim', 'valor_total', 'status'])
     #convertendo colunas de data para o tipo datetime do pandas para calculos
-    df['data_inicio'] = pd.to_datetime(df['data_inicio'])
-    df['data_fim'] = pd.to_datetime(df['data_fim'])
+    df['data_inicio'] = pd.to_datetime(df['data_inicio'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+    df['data_fim'] = pd.to_datetime(df['data_fim'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+
     return df
 
 # Funções para os gráficos
