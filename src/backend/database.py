@@ -14,6 +14,7 @@ def conectar_bd():
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row  # Permite acessar colunas por nome
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
     except sqlite3.Error as e:
         logging.error(f"Erro ao conectar ao banco de dados: {e}", exc_info=True)
@@ -32,19 +33,32 @@ def verificar_senha(senha, hash_armazenado):
 
 
 # --- CRUD: Utilizadores ---
-def adicionar_utilizador(nome, email, senha, cargo):
-    """Adiciona um novo utilizador, com senha hasheada."""
+def adicionar_utilizador(nome, email, senha, cargo, conn=None):  # NOVO: Parâmetro opcional 'conn'
+    """
+    Adiciona um novo utilizador, com senha hasheada.
+    Pode usar uma conexão existente ou criar uma nova.
+    """
     senha_hashed = hash_senha(senha)
     sql = "INSERT INTO utilizadores (nome, email, senha, cargo) VALUES (?, ?, ?, ?)"
-    with conectar_bd() as conn:
-        cursor = conn.cursor()
+
+    # Se uma conexão não for fornecida, cria uma temporária com 'with'
+    if conn is None:
         try:
+            with conectar_bd() as conn_local:
+                cursor = conn_local.cursor()
+                cursor.execute(sql, (nome, email, senha_hashed, cargo))
+                return True
+        except sqlite3.IntegrityError:
+            return False
+    # Se uma conexão for fornecida, usa-a diretamente
+    else:
+        try:
+            cursor = conn.cursor()
             cursor.execute(sql, (nome, email, senha_hashed, cargo))
-            conn.commit()
+            # Não fazemos conn.commit() aqui, deixamos para o chamador principal
             return True
         except sqlite3.IntegrityError:
             return False
-
 
 def buscar_utilizador_por_email(email):
     """Busca um utilizador pelo seu email."""
@@ -87,11 +101,17 @@ def atualizar_veiculo(id_veiculo, **kwargs):
 
 
 def deletar_veiculo(id_veiculo):
+    """Deleta um veículo, se ele não tiver reservas associadas."""
     sql = "DELETE FROM veiculos WHERE id = ?"
     with conectar_bd() as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql, (id_veiculo,))
-        conn.commit()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql, (id_veiculo,))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            # Ocorre se uma chave estrangeira (reserva) aponta para este veículo
+            return False
 
 def buscar_veiculos_com_devolucao_hoje():
     hoje_str = date.today().strftime('%Y/%m/%d')
@@ -127,17 +147,21 @@ def buscar_veiculo_por_id(id_veiculo):
         return cursor.fetchone()
 
 # --- CRUD: Clientes ---
-def adicionar_cliente(nome_completo, telefone, email, nif, cc):
-    sql = "INSERT INTO clientes (nome_completo, telefone, email, nif, cc) VALUES (?, ?, ?, ?, ?)"
-    with conectar_bd() as conn:
-        cursor = conn.cursor()
+def adicionar_cliente(nome_completo, nif, telefone, email, cc, conn=None):
+    sql = "INSERT INTO clientes (nome_completo, nif, telefone, email, cc) VALUES (?, ?, ?, ?, ?)"
+    if conn is None:
         try:
-            cursor.execute(sql, (nome_completo, telefone, email, nif, cc))
-            conn.commit()
+            with conectar_bd() as conn_local:
+                conn_local.execute(sql, (nome_completo, nif, telefone, email, cc))
+                return True
+        except sqlite3.IntegrityError:
+            return False
+    else:
+        try:
+            conn.execute(sql, (nome_completo, nif, telefone, email, cc))
             return True
         except sqlite3.IntegrityError:
             return False
-
 
 def listar_clientes():
     sql = "SELECT * FROM clientes ORDER BY nome_completo"
@@ -276,52 +300,68 @@ def listar_formas_pagamento():
         cursor.execute(sql)
         return cursor.fetchall()
 
-def importar_veiculos_de_csv(caminho_arquivo):
+
+# Em src/backend/database.py
+def importar_clientes_de_csv(caminho_arquivo):
     """
-        Importa veículos de um arquivo CSV para o banco de dados.
-        Retorna a contagem de sucessos e falhas.
-        """
-    import pandas as pd  # Importação local para manter o resto do módulo leve
+    Importa clientes de um arquivo CSV para o banco de dados.
+    Retorna a contagem de sucessos e falhas.
+    """
+    import pandas as pd
+    import logging
 
     sucessos = 0
     falhas = 0
     erros_detalhados = []
 
     try:
-        df = pd.read_csv(caminho_arquivo, sep=';', dtype=str)
+        df = pd.read_csv(caminho_arquivo, sep=';', dtype=str).fillna('')
 
-        # Validação básica das colunas esperadas
-        colunas_obrigatorias = {'marca', 'modelo', 'ano', 'placa', 'cor', 'valor_diaria', 'data_proxima_revisao'}
+        colunas_obrigatorias = {'nome_completo', 'nif', 'telefone', 'email', 'cc'}
         if not colunas_obrigatorias.issubset(df.columns):
-            return 0, 0, [f"Arquivo CSV deve conter as colunas: {', '.join(colunas_obrigatorias)}"]
+            msg = f"Arquivo CSV deve conter as colunas: {', '.join(colunas_obrigatorias)}"
+            logging.error(msg)
+            return 0, 0, [msg]
 
+        # CORREÇÃO: Usamos o with aqui para garantir que a transação seja gerenciada
         with conectar_bd() as conn:
             cursor = conn.cursor()
             for index, row in df.iterrows():
                 try:
-                    # Tenta inserir cada linha na tabela de veículos
-                    sql = "INSERT INTO veiculos (marca, modelo, ano, placa, cor, valor_diaria, data_proxima_revisao, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'disponível')"
-                    cursor.execute(sql, (
-                        row['marca'], row['modelo'], int(row['ano']), row['placa'],
-                        row['cor'], float(row['valor_diaria']), row['data_proxima_revisao']
-                    ))
+                    # Usando a função já existente para adicionar cliente
+                    # A função adicionar_cliente já faz o seu próprio commit, o que não é ideal para um lote.
+                    # Vamos inserir diretamente para controlar a transação.
+                    cursor.execute(
+                        "INSERT INTO clientes (nome_completo, nif, telefone, email, cc) VALUES (?, ?, ?, ?, ?)",
+                        (row['nome_completo'], row['nif'], row['telefone'], row['email'], row['cc'])
+                    )
                     sucessos += 1
-                except (sqlite3.IntegrityError, ValueError, KeyError) as e:
-                    # Captura erros de placa duplicada, conversão de tipo ou coluna faltando
+                except (sqlite3.IntegrityError) as e:
                     falhas += 1
-                    erros_detalhados.append(f"Linha {index + 2}: Placa '{row.get('placa', 'N/A')}' - Erro: {e}")
+                    erros_detalhados.append(
+                        f"Linha {index + 2}: NIF/Email/CC '{row.get('nif', 'N/A')}' provavelmente já existe.")
+                except KeyError as e:
+                    falhas += 1
+                    erros_detalhados.append(f"Linha {index + 2}: Coluna faltando - Erro: {e}")
 
+            # Commit é feito uma única vez no final, o que é muito mais performático
             conn.commit()
 
     except FileNotFoundError:
-        erros_detalhados.append("Arquivo não encontrado.")
+        msg = "Arquivo de importação não encontrado."
+        logging.error(msg)
+        erros_detalhados.append(msg)
         return 0, 1, erros_detalhados
     except Exception as e:
-        erros_detalhados.append(f"Erro inesperado ao processar o arquivo: {e}")
-        return sucessos, falhas + (len(df) - sucessos - falhas), erros_detalhados
+        msg = f"Erro inesperado ao processar o arquivo: {e}"
+        logging.error(msg, exc_info=True)
+        erros_detalhados.append(msg)
+        # O total de falhas é o que não foi sucesso.
+        total_rows = len(df) if 'df' in locals() else 0
+        falhas = total_rows - sucessos
+        return sucessos, falhas, erros_detalhados
 
     return sucessos, falhas, erros_detalhados
-
 def buscar_revisoes_proximas(dias_limite=15):
     """Busca veículos com revisão agendada entre hjoje e a data limite"""
     hoje = date.today()
@@ -371,13 +411,17 @@ def importar_clientes_de_csv(caminho_arquivo):
             for index, row in df.iterrows():
                 try:
                     if adicionar_cliente(
-                        row['nome_completo'], row['nif'], row['telefone'], row['email'], row['cc']):
+                        row['nome_completo'], row['nif'],
+                        row['telefone'], row['email'], row['cc'],
+                        cursor_existente=cursor
+                    ):
                         sucessos += 1
                     else:
                         falhas += 1
-                        erros_detalhados.append(f"Linha{index + 2}: NIF/Email/CC '{row.get('nif', 'N/A')}' provavelmente já existe.")
+                        erros_detalhados.append(
+                            f"Linha {index + 2}: NIF/Email/CC '{row.get('nif', 'N/A')}' provavelmente já existe.")
 
-                except (KeyError) as e:
+                except KeyError as e:
                     falhas += 1
                     erros_detalhados.append(f"Linha{index + 2}: Coluna faltando - Erro: {e}")
 
@@ -395,3 +439,11 @@ def listar_veiculos_disponiveis():
         cursor = conn.cursor()
         cursor.execute(sql)
         return cursor.fetchall()
+
+def buscar_veiculo_por_id(id_veiculo):
+    """Busca um único veículo pelo seu ID."""
+    sql = "SELECT * FROM veiculos WHERE id = ?"
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (id_veiculo,))
+        return cursor.fetchone()

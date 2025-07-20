@@ -21,6 +21,8 @@ def setup_logging():
         ]
     )
 
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+
     logger = logging.getLogger(__name__)
     logger.info("="*50)
     logger.info("Sistema de Logging Inicializado")
