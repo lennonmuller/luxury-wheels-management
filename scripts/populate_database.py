@@ -48,24 +48,25 @@ def popular_dados_base(conn):
 
     # Usuário Admin
     # ATUALIZADO: Passa a conexão 'conn' para a função
-    db.adicionar_utilizador("Admin User", "admin@lw.com", "1234", "Gerente", conn=conn)
+    db.adicionar_utilizador("Admin User", "admin@lw.com", "1234", "Gerente", conn_externa=conn)
 
     logging.info("Dados base populados.")
+
 
 def popular_veiculos(conn, quantidade=50):
     """Gera e insere veículos fictícios."""
     cursor = conn.cursor()
     logging.info(f"Populando {quantidade} veículos...")
     marcas_modelos = {
+        'BMW': ['Série 3', 'Série 5', 'X3', 'X5', 'i4'],
         'Mercedes-Benz': ['A-Class', 'C-Class', 'E-Class', 'GLC'],
-        'BMW': ['Série 3', 'Série 5', 'X1', 'X3', 'X5'],
         'Audi': ['A3', 'A4', 'Q3', 'Q5'],
         'Jaguar': ['F-Pace', 'E-Pace'],
         'Land Rover': ['Evoque', 'Velar'],
         'Volvo': ['XC40', 'XC60'],
         'Porsche': ['Macan', 'Cayenne']
     }
-    cores = ['Preto', 'Branco', 'Prata', 'Cinza', 'Azul', 'Vermelho']
+    cores = ['Preto', 'Branco', 'Prata', 'Cinza', 'Azul Escuro', 'Vermelho']
 
     for _ in range(quantidade):
         marca = random.choice(list(marcas_modelos.keys()))
@@ -86,31 +87,30 @@ def popular_veiculos(conn, quantidade=50):
 
 def popular_clientes(conn, quantidade=50):
     """Gera e insere clientes fictícios com dados portugueses."""
-    cursor = conn.cursor()
     logging.info(f"Populando {quantidade} clientes (PT-PT)...")
-    clientes_adicionados = 0
-    for _ in range(quantidade * 2):
-        if clientes_adicionados >= quantidade:
-            break
+    cursor = conn.cursor()
+
+    for _ in range(quantidade):
         try:
             nome = fake.name()
             email = fake.unique.email()
 
-            primeiro_digito = random.choice(['1', '2', '3'])
-            nif = primeiro_digito + "".join([str(random.randint(0, 9)) for _ in range(8)])
-            cc = str(fake.random_number(digits=8, fix_len=True))
+            # CORREÇÃO: O provedor 'pt_PT' usa o método ssn() para gerar o NIF.
+            nif = fake.ssn()
+
+            # Geração do CC (mantém-se igual)
+            cc_num = fake.random_number(digits=8, fix_len=True)
+            cc_check = "".join(random.choices("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=2))
+            cc = f"{cc_num}{cc_check}"
 
             cursor.execute(
                 "INSERT INTO clientes (nome_completo, nif, telefone, email, cc) VALUES (?, ?, ?, ?, ?)",
                 (nome, nif, fake.phone_number(), email, cc)
             )
-            clientes_adicionados += 1
-
-        except (sqlite3.IntegrityError, UniquenessException):
+        except sqlite3.IntegrityError:
             continue
-
     conn.commit()
-    logging.info(f"{clientes_adicionados} clientes populados.")
+    logging.info("Clientes populados.")
 
 
 def popular_reservas_avancado(conn, quantidade=150):
@@ -135,12 +135,19 @@ def popular_reservas_avancado(conn, quantidade=150):
     while reservas_criadas < quantidade and tentativas < max_tentativas:
         tentativas += 1
 
+
         veiculo_escolhido = random.choice(veiculos)
         id_veiculo = veiculo_escolhido['id']
 
-        data_inicio = fake.date_time_between(start_date='-1y', end_date='+1m')
-        duracao = timedelta(days=random.randint(2, 10))
+        data_inicio = fake.date_time_between(start_date='-1y', end_date='+30d')
+        duracao = timedelta(days=random.randint(2, 12))
         data_fim = data_inicio + duracao
+
+        data_inicio_str = data_inicio.strftime('%Y-%m-%d %H:%M:%S')
+        data_fim_str = data_fim.strftime('%Y-%m-%d %H:%M:%S')
+
+        if not db.verificar_disponibilidade_veiculo(id_veiculo, data_inicio_str, data_fim_str):
+            continue
 
         cursor.execute("""
             SELECT COUNT(*) FROM reservas

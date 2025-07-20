@@ -135,7 +135,7 @@ class VehicleView(ctk.CTkFrame):
         style.configure("Devolucao.Treeview", background="#1f6aa5")  # Cor de destaque para devolução hoje
 
         self.tree = ttk.Treeview(content_frame,
-                                 columns=("ID", "Marca", "Modelo", "Placa", "Status", "Revisão", "Valor Diária"),
+                                 columns=("ID", "Marca", "Modelo", "Placa", "Status", "Revisão", "Valor Diária", "Data Retorno"),
                                  show="headings")
 
         for col in self.tree["columns"]:
@@ -182,6 +182,20 @@ class VehicleView(ctk.CTkFrame):
                 v["id"], v["marca"], v["modelo"], v["placa"],
                 v["status"].capitalize(), data_revisao_formatada, valor_diaria_formatado
             ), tags=(tag_cor,))
+
+        for v in db.listar_veiculos():
+            status_final = v['status_dinamico']
+            data_retorno_str = ""
+            if status_final == 'Alugado' and v['data_retorno']:
+                try:
+                    data_retorno_str = datetime.strptime(v['data_retorno'], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y')
+                except (ValueError, TypeError):
+                    data_retorno_str = "N/A"
+
+            self.tree.insert("", "end", values=(
+                v["id"], v["marca"], v["modelo"],
+                v["placa"], status_final.title(), data_retorno_str
+            ))
 
     def abrir_adicionar(self):
         FormularioVeiculo(self, self.controller)

@@ -6,7 +6,7 @@ from PIL import Image, ImageTk
 import os
 
 class MainView(ctk.CTkFrame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, user_name):
         super().__init__(parent)
         self.controller = controller
 
