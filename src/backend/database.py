@@ -33,32 +33,36 @@ def verificar_senha(senha, hash_armazenado):
 
 
 # --- CRUD: Utilizadores ---
-def adicionar_utilizador(nome, email, senha, cargo, conn=None):  # NOVO: Parâmetro opcional 'conn'
+def adicionar_utilizador(nome, email, senha, cargo, conn_externa=None):
     """
-    Adiciona um novo utilizador, com senha hasheada.
-    Pode usar uma conexão existente ou criar uma nova.
+    Adiciona um novo utilizador. Se uma conexão externa for fornecida,
+    usa-a. Caso contrário, cria uma nova.
     """
     senha_hashed = hash_senha(senha)
     sql = "INSERT INTO utilizadores (nome, email, senha, cargo) VALUES (?, ?, ?, ?)"
 
-    # Se uma conexão não for fornecida, cria uma temporária com 'with'
-    if conn is None:
-        try:
-            with conectar_bd() as conn_local:
-                cursor = conn_local.cursor()
-                cursor.execute(sql, (nome, email, senha_hashed, cargo))
-                return True
-        except sqlite3.IntegrityError:
-            return False
-    # Se uma conexão for fornecida, usa-a diretamente
-    else:
-        try:
-            cursor = conn.cursor()
-            cursor.execute(sql, (nome, email, senha_hashed, cargo))
-            # Não fazemos conn.commit() aqui, deixamos para o chamador principal
-            return True
-        except sqlite3.IntegrityError:
-            return False
+    def _operacao(cursor):
+        cursor.execute(sql, (nome, email, senha_hashed, cargo))
+
+    try:
+        if conn_externa:
+            # Opera na conexão/transação existente
+            _operacao(conn_externa.cursor())
+            # O commit será feito pelo chamador
+        else:
+            # Gerencia a própria conexão
+            with conectar_bd() as conn:
+                _operacao(conn.cursor())
+                # O commit é automático aqui
+        return True
+    except sqlite3.IntegrityError:
+        logging.warning(f"Tentativa de adicionar usuário com email duplicado: {email}")
+        return False
+    except Exception as e:
+        # O erro de 'database is locked' acontecerá aqui se chamado incorretamente
+        logging.error(f"Erro inesperado ao adicionar usuário: {e}", exc_info=True)
+        return False
+
 
 def buscar_utilizador_por_email(email):
     """Busca um utilizador pelo seu email."""
@@ -83,10 +87,28 @@ def adicionar_veiculo(marca, modelo, ano, placa, cor, valor_diaria, data_proxima
 
 
 def listar_veiculos():
-    sql = "SELECT * FROM veiculos ORDER BY marca, modelo"
+    """
+    Retorna uma lista de todos os veículos, incluindo um campo dinâmico
+    'status_dinamico' se o veículo estiver alugado hoje.
+    """
+    hoje = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    sql = """
+        SELECT 
+            v.*,
+            CASE 
+                WHEN r.id IS NOT NULL THEN 'Alugado'
+                ELSE v.status -- Mantém o status original (ex: 'manutenção')
+            END AS status_dinamico,
+            r.data_fim AS data_retorno
+        FROM veiculos v
+        LEFT JOIN reservas r ON v.id = r.id_veiculo 
+                             AND r.status = 'ativa' 
+                             AND ? BETWEEN r.data_inicio AND r.data_fim
+        ORDER BY v.marca, v.modelo
+    """
     with conectar_bd() as conn:
         cursor = conn.cursor()
-        cursor.execute(sql)
+        cursor.execute(sql, (hoje,))
         return cursor.fetchall()
 
 
@@ -147,7 +169,7 @@ def buscar_veiculo_por_id(id_veiculo):
         return cursor.fetchone()
 
 # --- CRUD: Clientes ---
-def adicionar_cliente(nome_completo, nif, telefone, email, cc, conn=None):
+def adicionar_cliente(nome_completo, nif, telefone, email, cc, cursor=None):
     sql = "INSERT INTO clientes (nome_completo, nif, telefone, email, cc) VALUES (?, ?, ?, ?, ?)"
     if conn is None:
         try:
@@ -447,3 +469,29 @@ def buscar_veiculo_por_id(id_veiculo):
         cursor = conn.cursor()
         cursor.execute(sql, (id_veiculo,))
         return cursor.fetchone()
+
+def verificar_disponibilidade_veiculo(id_veiculo, data_inicio, data_fim, id_reserva_existente=None):
+    """
+    Verifica se um veículo está disponível em um dado período,
+    opcionalmente ignorando uma reserva existente (para o caso de edição).
+    Retorna True se disponível, False se houver conflito.
+    """
+    sql = """
+        SELECT COUNT(*) FROM reservas
+        WHERE id_veiculo = ? AND (
+            (data_inicio <= ? AND data_fim >= ?) OR -- Reserva existente engloba o novo período
+            (data_inicio >= ? AND data_inicio <= ?) OR -- Início da nova reserva conflita
+            (data_fim >= ? AND data_fim <= ?) -- Fim da nova reserva conflita
+        )
+    """
+    params = [id_veiculo, data_inicio, data_fim, data_inicio, data_fim, data_inicio, data_fim]
+
+    if id_reserva_existente:
+        sql += " AND id != ?"
+        params.append(id_reserva_existente)
+
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        conflitos = cursor.fetchone()[0]
+        return conflitos == 0

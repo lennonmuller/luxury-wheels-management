@@ -1,3 +1,5 @@
+# src/main.py
+
 import customtkinter as ctk
 from frontend.login_view import LoginView
 from frontend.register_view import RegisterView
@@ -5,58 +7,47 @@ from frontend.main_view import MainView
 from backend.logger_config import setup_logging
 import logging
 
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Luxury Wheels - Sistema de Gestão")
         ctk.set_appearance_mode("dark")
+        self._current_frame = None
+        self.show_login_view()
 
-        # Container principal onde todos os frames viverão
-        container = ctk.CTkFrame(self)
-        container.pack(side="top", fill="both", expand=True)
-        container.grid_rowconfigure(0, weight=1)
-        container.grid_columnconfigure(0, weight=1)
+    def switch_frame(self, frame_class, *args):
+        if self._current_frame:
+            self._current_frame.destroy()
 
-        self.frames = {}
-        self.current_user_name = "" # Para guardar o nome do usuário logado
+        # A nova instância é criada passando 'self' como parent e controller
+        self._current_frame = frame_class(self, self, *args)
+        self._current_frame.pack(fill="both", expand=True)
 
-        # Criar todas as telas uma vez e guardá-las no dicionário
-        for F in (LoginView, MainView, RegisterView):
-            frame_name = F.__name__
-            frame = F(container, self) # Passa o container e o controller
-            self.frames[frame_name] = frame
-            frame.grid(row=0, column=0, sticky="nsew")
-
-        # Inicia mostrando a tela de login
-        self.show_frame("LoginView")
-
-    def show_frame(self, frame_name):
-        """Levanta o frame desejado para a frente."""
-        if frame_name == "MainView":
-            # Redimensiona a janela para a tela principal
-            self.geometry("1200x700")
-            self.resizable(True, True)
-            # ATUALIZA A MENSAGEM DE BOAS-VINDAS ANTES DE MOSTRAR
-            main_frame = self.frames["MainView"]
-            main_frame.update_welcome_message(self.current_user_name)
-        else:
-            # Redimensiona para as telas de auth
-            self.geometry("400x500")
-            self.resizable(False, False)
-
-        frame = self.frames[frame_name]
-        frame.tkraise()
-
-    # Mantenha os métodos de conveniência para serem chamados de outras views
     def show_login_view(self):
-        self.show_frame("LoginView")
+        self.geometry("400x550")
+        self.resizable(False, False)
+        # LoginView não precisa de argumentos extras
+        self.switch_frame(LoginView)
 
-    def show_main_view(self, user_name="Usuário"):
-        self.current_user_name = user_name # Salva o nome do usuário
-        self.show_frame("MainView")
+    def show_main_view(self, user_name):
+        self.geometry("1280x720")
+        self.resizable(True, True)
+        # Passa user_name como o argumento extra
+        self.switch_frame(MainView, user_name)
 
     def show_register_view(self):
-        self.show_frame("RegisterView")
+        self.geometry("400x550")
+        self.resizable(False, False)
+        # RegisterView não precisa de argumentos extras
+        self.switch_frame(RegisterView)
+
+    def navigate_to_vehicle_view_from_main(self):
+        if isinstance(self._current_frame, MainView):
+            self._current_frame.show_vehicle_view()
+        else:
+            logging.error("Tentativa de navegar para VehicleView sem a MainView estar ativa.")
+
 
 if __name__ == "__main__":
     setup_logging()
@@ -64,4 +55,4 @@ if __name__ == "__main__":
         app = App()
         app.mainloop()
     except Exception as e:
-        logging.critical("Ocorreu um erro fatal na aplicação!", exc_info=True)
+        logging.critical("Ocorreu um erro fatal e não capturado na aplicação!", exc_info=True)

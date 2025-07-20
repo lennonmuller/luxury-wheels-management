@@ -72,7 +72,7 @@ class LoginView(ctk.CTkFrame):
 
         if utilizador and db.verificar_senha(senha, utilizador['senha']):
             self.msg_label.configure(text="Login bem-sucedido!", text_color="green")
-            self.controller.show_main_view(utilizador['nome'])
-
+            self.controller.focus_set()
+            self.after(5, lambda: self.controller.show_main_view(utilizador['nome']))
         else:
             self.msg_label.configure(text="Email ou senha incorretos.")
