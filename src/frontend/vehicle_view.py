@@ -22,7 +22,7 @@ class FormularioVeiculo(ctk.CTkToplevel):
         self.resizable(False, False)
         self.grab_set()  # Mantém o foco na janela
 
-        self.campos = ["Marca", "Modelo", "Ano", "Placa", "Cor", "Valor Diaria", "Data Proxima Revisao"]
+        self.campos = ["Marca", "Modelo", "Ano", "Placa", "Cor", "Valor Diária (€)", "Data Proxima Revisao"]
         self.entradas = {}
 
         for campo in self.campos:
@@ -254,6 +254,7 @@ class VehicleView(ctk.CTkFrame):
 
         dados_veiculos = [dict(v) for v in veiculos]
         df = pd.DataFrame(dados_veiculos)
+        df.rename(columns={'valor_diaria': 'valor_diaria_eur'}, inplace=True)
 
         caminho_arquivo = filedialog.asksaveasfilename(
             defaultextension=".xlsx",

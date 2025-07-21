@@ -61,14 +61,18 @@ class DashboardView(ctk.CTkFrame):
         fig, ax = plt.subplots(figsize=(6, 4))
 
         if not faturamento.empty:
-            faturamento.index = faturamento.index.astype(str)
-            sns.barplot(x=faturamento.index, y=faturamento.values, ax=ax, palette="viridis", hue=faturamento.index, legend=False)
-            ax.set_title("Faturamento Mensal (R$)")
-            ax.set_ylabel("Valor Total (R$)")
-            ax.set_xlabel("Mês/Ano")
+            faturamento['mes_ano'] = faturamento['mes_ano'].astype(str)
+            sns.barplot(data=faturamento, x='mes_ano', y='faturamento', ax=ax, palette="viridis")
+            from matplotlib.ticker import FuncFormatter
+            formatter = FuncFormatter(lambda y, _: f'€ {int(y / 1000)}k' if y >= 1000 else f'€ {int(y)}')
+            ax.yaxis.set_major_formatter(formatter)
+
+            ax.set_title("Faturamento Mensal (€)", color="white")
+            ax.set_ylabel("Faturamento", color="white")
+            ax.set_xlabel("Mês/Ano", color="white")
             plt.xticks(rotation=45, ha='right')
         else:
-            ax.text(0.5, 0.5, "Sem dados de faturamento", ha='center', va='center', fontsize=12)
+            ax.text(0.5, 0.5, "Sem dados de faturamento", ha='center', va='center', color='white', fontsize=12)
 
         fig.tight_layout()
         self.plotar_grafico(fig, 0, 0)

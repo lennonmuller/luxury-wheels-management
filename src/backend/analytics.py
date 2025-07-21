@@ -41,13 +41,19 @@ def get_faturamento_mensal():
 
     df_reservas = get_reservas_df()
 
-    if df_reservas.empty:
-        return pd.Series(dtype=float)
+    df_filtrado = df_reservas[df_reservas['status'].isin(['ativa', 'concluída'])].copy()
 
-    df_reservas['mes_ano'] = df_reservas['data_inicio'].dt.to_period('M')
-    faturamento = df_reservas.groupby('mes_ano')['valor_total'].sum()
-    return faturamento.sort_index()
+    if df_filtrado.empty:
+        return pd.DataFrame(columns=['mes_ano', 'faturamento'])
 
+    df_filtrado['data_inicio'] = pd.to_datetime(df_filtrado['data_inicio'])
+
+    df_filtrado['mes_ano'] = df_filtrado['data_inicio'].dt.to_period('M')
+
+    faturamento_mensal = df_filtrado.groupby('mes_ano')['valor_total'].sum().reset_index()
+    faturamento_mensal.rename(columns={'valor_total': 'faturamento'}, inplace=True)
+
+    return faturamento_mensal.sort_values(by='mes_ano')
 
 def get_veiculos_por_status():
     """Conta quantos veículos existem em cada status dinâmico."""
