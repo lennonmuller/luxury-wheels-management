@@ -94,7 +94,15 @@ def listar_veiculos():
     hoje = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     sql = """
         SELECT 
-            v.*,
+            v.id,
+            v.marca,
+            v.modelo,
+            v.ano,
+            v.placa,
+            v.cor,
+            v.valor_diaria,
+            v.data_proxima_revisao,
+            v.imagem_path,
             CASE 
                 WHEN r.id IS NOT NULL THEN 'Alugado'
                 ELSE v.status -- Mantém o status original (ex: 'manutenção')

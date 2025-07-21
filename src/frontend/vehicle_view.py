@@ -159,43 +159,62 @@ class VehicleView(ctk.CTkFrame):
         self.carregar_dados()
 
     def carregar_dados(self):
+        # Limpa a tabela antes de carregar novos dados
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        # Busca os dados com a query explícita e robusta do backend
         veiculos = db.listar_veiculos()
-        veiculos_devolucao_hoje = db.buscar_veiculos_com_devolucao_hoje()
 
         for v in veiculos:
-            try:
-                data_revisao_formatada = datetime.strptime(v['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
-            except (ValueError, TypeError):
-                data_revisao_formatada = "N/A"
+            # Prepara cada variável de forma defensiva, tratando valores nulos (None)
 
-            valor_diaria_formatado = f"€ {v['valor_diaria']:.2f}".replace('.', ',')
+            # 1. Status Dinâmico
+            status_final = v['status_dinamico'].title() if v['status_dinamico'] else "Indefinido"
 
-            # Determina a tag de cor
-            tag_cor = v['status'].capitalize()  # 'Disponivel', 'Alugado', 'Manutencao'
-            if v['id'] in veiculos_devolucao_hoje:
-                tag_cor = 'Devolucao'
-
-            self.tree.insert("", "end", values=(
-                v["id"], v["marca"], v["modelo"], v["placa"],
-                v["status"].capitalize(), data_revisao_formatada, valor_diaria_formatado
-            ), tags=(tag_cor,))
-
-        for v in db.listar_veiculos():
-            status_final = v['status_dinamico']
-            data_retorno_str = ""
-            if status_final == 'Alugado' and v['data_retorno']:
+            # 2. Data da Próxima Revisão
+            data_revisao_str = ""
+            if v['data_proxima_revisao'] is not None:
                 try:
+                    # Converte de 'AAAA-MM-DD' para 'DD/MM/AAAA'
+                    data_revisao_str = datetime.strptime(v['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
+                except (ValueError, TypeError):
+                    data_revisao_str = "Data Inválida"
+            else:
+                data_revisao_str = "Não Definida"
+
+            # 3. Valor da Diária
+            valor_diaria_str = ""
+            if v['valor_diaria'] is not None:
+                # Formata para o padrão Euro com vírgula decimal
+                valor_diaria_str = f"€ {v['valor_diaria']:.2f}".replace('.', ',')
+            else:
+                valor_diaria_str = "N/A"
+
+            # 4. Data de Retorno
+            data_retorno_str = ""  # Padrão é vazio para carros não alugados
+            if status_final == 'Alugado' and v['data_retorno'] is not None:
+                try:
+                    # Converte de 'AAAA-MM-DD HH:MM:SS' para 'DD/MM/AAAA'
                     data_retorno_str = datetime.strptime(v['data_retorno'], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y')
                 except (ValueError, TypeError):
-                    data_retorno_str = "N/A"
+                    data_retorno_str = "Data Inválida"
 
-            self.tree.insert("", "end", values=(
-                v["id"], v["marca"], v["modelo"],
-                v["placa"], status_final.title(), data_retorno_str
-            ))
+            # Monta a tupla de valores na ordem exata das colunas da TreeView
+            # ORDEM: "ID", "Marca", "Modelo", "Placa", "Status", "Revisão", "Valor Diária", "Data Retorno"
+            valores_para_inserir = (
+                v["id"],
+                v["marca"],
+                v["modelo"],
+                v["placa"],
+                status_final,
+                data_revisao_str,
+                valor_diaria_str,
+                data_retorno_str
+            )
+
+            # Insere a linha na tabela
+            self.tree.insert("", "end", values=valores_para_inserir)
 
     def abrir_adicionar(self):
         FormularioVeiculo(self, self.controller)

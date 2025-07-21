@@ -62,7 +62,8 @@ class DashboardView(ctk.CTkFrame):
 
         if not faturamento.empty:
             faturamento['mes_ano'] = faturamento['mes_ano'].astype(str)
-            sns.barplot(data=faturamento, x='mes_ano', y='faturamento', ax=ax, palette="viridis")
+            sns.barplot(data=faturamento, x='mes_ano', y='faturamento', ax=ax,
+                        palette="viridis", hue='mes_ano', legend=False)
             from matplotlib.ticker import FuncFormatter
             formatter = FuncFormatter(lambda y, _: f'€ {int(y / 1000)}k' if y >= 1000 else f'€ {int(y)}')
             ax.yaxis.set_major_formatter(formatter)
@@ -87,7 +88,7 @@ class DashboardView(ctk.CTkFrame):
             palette_ordenada = [cores.get(status, "#bdc3c7") for status in status_counts.index]
 
             sns.barplot(x=status_counts.index, y=status_counts.values, ax=ax,
-                        hue=status_counts.index, palette=palette_ordenada, legend=False)
+                        palette=palette_ordenada, hue=status_counts.index, legend=False)
 
             ax.set_title("Distribuição de Veículos por Status")
             ax.set_ylabel("Quantidade")
