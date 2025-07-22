@@ -22,9 +22,10 @@ class FormularioVeiculo(ctk.CTkToplevel):
         self.resizable(False, False)
         self.grab_set()  # Mantém o foco na janela
 
-        self.campos = ["Marca", "Modelo", "Ano", "Placa", "Cor", "Valor Diária (€)", "Data Proxima Revisao"]
-        self.entradas = {}
+        self.campos = ["Marca", "Modelo", "Ano", "Placa", "Cor", "Valor Diária (€)", "Próxima Revisão"]
+        self.entradas = {}  # Dicionário para guardar os widgets de entrada
 
+        # --- PASSO 1: Cria todos os campos e popula o dicionário self.entradas ---
         for campo in self.campos:
             frame = ctk.CTkFrame(self)
             frame.pack(padx=20, pady=(10, 0), fill="x")
@@ -33,26 +34,40 @@ class FormularioVeiculo(ctk.CTkToplevel):
             entry = ctk.CTkEntry(frame)
             entry.pack(side="left", fill="x", expand=True)
 
-            chave_coluna = campo.lower().replace(" ", "_")
+            chave_normalizada = campo.lower().replace(" (€)", "").replace(" ", "_")
+            self.entradas[chave_normalizada] = entry
 
-            if "revisao" in chave_coluna:
-                self.data_revisao_entry = entry
-                vcmd = (self.register(self.validar_data), '%P')
-                entry.configure(validate="key", validatecommand=vcmd)
+            # Preenche os dados se estiver editando
+            if dados_veiculo:
+                # O nome da coluna no BD pode não ser igual à chave
+                chave_bd = chave_normalizada.replace("próxima_revisão", "data_proxima_revisao")
+                chave_bd = chave_bd.replace("valor_diária", "valor_diaria")
 
-                if dados_veiculo:
-                    data_str = dados_veiculo.get(chave_coluna, '')
-                    if data_str:
-                        data_obj = datetime.strptime(data_str, '%Y-%m-%d')
-                        entry.insert(0, data_obj.strftime('%d/%m/%Y'))
-                else:
-                    entry.insert(0, "DD/MM/AAAA")
-            else:
-                if dados_veiculo:
-                    entry.insert(0, dados_veiculo.get(chave_coluna, ''))
+                valor_bd = dados_veiculo.get(chave_bd)
 
-            self.entradas[chave_coluna] = entry
+                if valor_bd is not None:
+                    # Formata a data para exibição DD/MM/AAAA
+                    if "revisao" in chave_bd:
+                        try:
+                            valor_bd = datetime.strptime(str(valor_bd), '%Y-%m-%d').strftime('%d/%m/%Y')
+                        except ValueError:
+                            pass  # Mantém o valor original se o formato for inesperado
+                    entry.insert(0, valor_bd)
 
+        # --- PASSO 2: Agora que self.entradas está completo, configura a validação ---
+        if 'próxima_revisão' in self.entradas:
+            self.data_revisao_entry = self.entradas['próxima_revisão']
+            # Cria o comando de validação
+            vcmd = (self.register(self.validar_data), '%P')
+            # Aplica o comando ao widget
+            self.data_revisao_entry.configure(validate="key", validatecommand=vcmd)
+            # Define o placeholder se não estiver editando
+            if not dados_veiculo:
+                self.data_revisao_entry.insert(0, "DD/MM/AAAA")
+                # Força uma validação inicial para definir a cor da borda
+                self.validar_data("DD/MM/AAAA")
+
+                # --- PASSO 3: Cria o botão de salvar ---
         texto_botao = "Confirmar Alterações" if dados_veiculo else "Salvar Novo Veículo"
         self.btn_salvar = ctk.CTkButton(self, text=texto_botao, command=self.salvar)
         self.btn_salvar.pack(pady=20)
@@ -71,41 +86,56 @@ class FormularioVeiculo(ctk.CTkToplevel):
         return False
 
     def salvar(self):
-        valores = {chave: entry.get() for chave, entry in self.entradas.items()}
+        valores = {}
+        for chave, entry in self.entradas.items():
+            valores[chave] = entry.get()
 
-        if not all(valores.values()):
-            messagebox.showwarning("Atenção", "Preencha todos os campos!", parent=self)
+        if not all(
+            v for k, v in valores.items() if k != 'imagem_path'):  # Verifica se todos os campos estão preenchidos
+            messagebox.showwarning("Atenção", "Preencha todos os campos!")
             return
 
-        # Validação e conversão da data
+        dados_para_db = {}
         try:
-            data_revisao_obj = datetime.strptime(valores['data_proxima_revisao'], '%d/%m/%Y')
-            valores['data_proxima_revisao'] = data_revisao_obj.strftime('%Y-%m-%d')
-        except ValueError:
-            messagebox.showerror("Erro de Formato", "A data de revisão está em um formato inválido. Use DD/MM/AAAA.",
-                                 parent=self)
-            return
+            dados_para_db['marca'] = valores['marca']
+            dados_para_db['modelo'] = valores['modelo']
+            dados_para_db['ano'] = int(valores['ano'])
+            dados_para_db['placa'] = valores['placa']
+            dados_para_db['cor'] = valores['cor']
 
-        # Validação de tipos numéricos
-        try:
-            valores['ano'] = int(valores['ano'])
-            valores['valor_diaria'] = float(valores['valor_diaria'].replace(',', '.'))
-        except ValueError:
-            messagebox.showerror("Erro de Tipo", "Ano e Valor da Diária devem ser números válidos.", parent=self)
-            return
+            # Remove o "€ " e troca a vírgula por ponto para converter para float
+            valor_str = valores['valor_diária'].replace('€', '').strip().replace(',', '.')
+            dados_para_db['valor_diaria'] = float(valor_str)
 
-        if self.dados_veiculo:  # Modo Edição
-            db.atualizar_veiculo(self.dados_veiculo['id'], **valores)
-            messagebox.showinfo("Sucesso", "Veículo atualizado com sucesso!", parent=self)
-        else:  # Modo Adição
-            if not db.adicionar_veiculo(**valores):
-                messagebox.showerror("Erro", "Falha ao adicionar veículo. Verifique se a placa já existe.", parent=self)
+            # Converte data de DD/MM/AAAA para AAAA-MM-DD
+            data_revisao_str = valores['próxima_revisão']
+            if data_revisao_str == "DD/MM/AAAA":
+                messagebox.showerror("Erro de Validação", "Por favor, insira uma data de revisão válida.")
                 return
-            messagebox.showinfo("Sucesso", "Novo veículo adicionado à frota!", parent=self)
+            data_revisao_obj = datetime.strptime(data_revisao_str, '%d/%m/%Y')
+            dados_para_db['data_proxima_revisao'] = data_revisao_obj.strftime('%Y-%m-%d')
+
+            # Campo opcional de imagem
+            dados_para_db['imagem_path'] = valores.get('imagem_path', None)
+
+        except (ValueError, KeyError) as e:
+            logging.error(f"Erro na conversão de dados do formulário: {e}", exc_info=True)
+            messagebox.showerror("Erro de Dados",
+                                 "Verifique se todos os campos estão preenchidos com valores válidos (números para ano/valor, data correta).")
+            return
+
+        # Chama as funções do DB com o dicionário de dados limpo e correto
+        if self.dados_veiculo:  # Modo Edição
+            db.atualizar_veiculo(self.dados_veiculo['id'], **dados_para_db)
+            messagebox.showinfo("Sucesso", "Veículo atualizado com sucesso!")
+        else:  # Modo Adição
+            if not db.adicionar_veiculo(**dados_para_db):
+                messagebox.showerror("Erro", "Não foi possível adicionar o veículo. Verifique se a placa já existe.")
+                return
+            messagebox.showinfo("Sucesso", "Novo veículo adicionado à frota!")
 
         self.parent_view.carregar_dados()
         self.destroy()
-
 
 # --- CLASSE PRINCIPAL DA VISÃO DE VEÍCULOS ---
 class VehicleView(ctk.CTkFrame):
