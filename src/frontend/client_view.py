@@ -7,6 +7,7 @@ from PIL import Image
 import os
 from datetime import datetime, timedelta
 import re
+from utils.helpers import  parse_datestr_flexible
 
 
 class FormularioCliente(ctk.CTkToplevel):
@@ -111,53 +112,63 @@ class CriarReservaWindow(ctk.CTkToplevel):
         self.btn_salvar.pack(pady=20)
 
     def salvar_reserva(self):
+        # 1. Obter dados da UI
         veiculo_selecionado = self.veiculo_combobox.get()
-        if not veiculo_selecionado or "Nenhum veículo" in veiculo_selecionado:
-            messagebox.showerror("Erro", "Nenhum veículo selecionado.")
+        data_inicio_str = self.data_inicio_entry.get() or self.data_inicio_entry.cget("placeholder_text")
+        data_fim_str = self.data_fim_entry.get() or self.data_fim_entry.cget("placeholder_text")
+        pagamento_selecionado = self.pagamento_combobox.get()
+
+        # 2. Validação inicial de campos vazios
+        if not veiculo_selecionado or "Nenhum veículo" in veiculo_selecionado or not pagamento_selecionado:
+            messagebox.showerror("Erro de Validação", "Por favor, selecione um veículo e uma forma de pagamento.")
             return
 
         id_veiculo = self.veiculos_map[veiculo_selecionado]
-        data_inicio_str = self.data_inicio_entry.get() or self.data_inicio_entry.cget("placeholder_text")
-        data_fim_str = self.data_fim_entry.get() or self.data_fim_entry.cget("placeholder_text")
-
-        pagamento_selecionado = self.pagamento_combobox.get()
         id_pagamento = self.pagamento_map.get(pagamento_selecionado)
 
+        # 3. Bloco de conversão e validação de data
         try:
             data_inicio_obj = datetime.strptime(data_inicio_str, '%d/%m/%Y')
             data_fim_obj = datetime.strptime(data_fim_str, '%d/%m/%Y')
 
-            data_inicio_db = data_inicio_obj.strftime('%Y-%m-%d %H:%M:%S')
-            data_fim_db = data_fim_obj.strftime('%Y-%m-%d %H:%M:%S')
-
             if data_fim_obj <= data_inicio_obj:
-                messagebox.showerror("Erro de Data", "A data de fim deve ser posterior à data de início.")
+                messagebox.showerror("Erro de Lógica", "A data de fim deve ser posterior à data de início.")
                 return
 
-            if not db.verificar_disponibilidade_veiculo(id_veiculo, data_inicio_db, data_fim_db):
-                messagebox.showerror("Conflito de Reserva",
-                                     "Este veículo já está reservado para o período selecionado.")
-                return
-
-            sucesso = db.adicionar_reserva(
-                id_cliente=self.id_cliente,
-                id_veiculo=id_veiculo,
-                id_forma_pagamento=id_pagamento,
-                data_inicio=data_inicio_obj.strftime('%Y-%m-%d'),
-                data_fim=data_fim_obj.strftime('%Y-%m-%d')
-            )
-
-            if sucesso:
-                messagebox.showinfo("Sucesso", "Reserva criada com sucesso!")
-                self.controller.navigate_to_vehicle_view_from_main()
-                self.destroy()
-            else:
-                messagebox.showerror("Erro",
-                                     "Não foi possível criar a reserva. Verifique os dados e a disponibilidade.")
-
+            # Formata para o padrão do banco de dados (com hora)
+            data_inicio_db = data_inicio_obj.strftime('%Y-%m-%d 00:00:00')
+            data_fim_db = data_fim_obj.strftime('%Y-%m-%d 23:59:59')
         except ValueError:
             messagebox.showerror("Erro de Formato", "Por favor, insira as datas no formato DD/MM/AAAA.")
             return
+
+        # 4. Verificação de disponibilidade no backend
+        if not db.verificar_disponibilidade_veiculo(id_veiculo, data_inicio_db, data_fim_db):
+            messagebox.showerror("Conflito de Reserva",
+                                 "Este veículo já está reservado e indisponível para o período selecionado.")
+            return
+
+        # 5. Se tudo estiver OK, adiciona a reserva
+        sucesso = db.adicionar_reserva(
+            id_cliente=self.id_cliente,
+            id_veiculo=id_veiculo,
+            id_forma_pagamento=id_pagamento,
+            data_inicio=data_inicio_db,
+            data_fim=data_fim_db
+        )
+
+        # 6. Feedback final ao usuário
+        if sucesso:
+            messagebox.showinfo("Sucesso", "Reserva criada com sucesso!")
+            # Tenta recarregar a tela de veículos para refletir a mudança de status
+            try:
+                self.parent_view.master.master.show_vehicle_view()
+            except Exception as e:
+                logging.warning(f"Não foi possível recarregar a view de veículos automaticamente: {e}")
+            self.destroy()
+        else:
+            messagebox.showerror("Erro Inesperado",
+                                 "Não foi possível criar a reserva. Verifique os logs para mais detalhes.")
 
 
 # --- CLASSE PARA A JANELA DE HISTÓRICO DE CLIENTE ---
@@ -184,23 +195,35 @@ class HistoricoClienteWindow(ctk.CTkToplevel):
         hoje = datetime.now().date()
 
         for r in reservas:
-            veiculo = f"{r['marca']} {r['modelo']} ({r['placa']})"
-            inicio_obj = datetime.strptime(r['data_inicio'], '%Y-%m-%d %H:%M:%S')
-            fim_obj = datetime.strptime(r['data_fim'], '%Y-%m-%d %H:%M:%S')
+            try:
+                veiculo = f"{r['marca']} {r['modelo']} ({r['placa']})"
 
-            inicio = inicio_obj.strftime('%d/%m/%y')
-            fim = fim_obj.strftime('%d/%m/%y')
-            status = r['status_reserva'].upper()
+                # Tenta converter as datas
+                inicio_obj = parse_datestr_flexible(r['data_inicio'])
+                fim_obj = parse_datestr_flexible(r['data_fim'])
 
-            prefixo = " "
-            if status == 'ATIVA' and fim_obj.date() >= hoje:
-                prefixo = ">"  # Indicador de reserva ativa
+                # Formata para exibição
+                inicio_f = inicio_obj.strftime('%d/%m/%Y')  # Formato de 4 dígitos no ano
+                fim_f = fim_obj.strftime('%d/%m/%Y')
 
-            linha = f"{prefixo} {veiculo.ljust(33)} | {inicio.ljust(10)} | {fim.ljust(10)} | {status}\n"
-            textbox.insert("end", linha)
+                status = r['status_reserva'].upper()
 
-        textbox.configure(state="disabled")
+                # A lógica que usa as variáveis do 'try' deve estar DENTRO do 'try'
+                if status == 'ATIVA' and fim_obj.date() >= hoje:
+                    linha = f"-> {veiculo.ljust(27)} | {inicio_f.ljust(12)} | {fim_f.ljust(12)} | {status}\n"
+                else:
+                    linha = f"   {veiculo.ljust(27)} | {inicio_f.ljust(12)} | {fim_f.ljust(12)} | {status}\n"
 
+                textbox.insert("end", linha)
+
+                # Adiciona o bloco 'except' que estava faltando
+            except (ValueError, TypeError, AttributeError) as e:
+                # Se uma reserva tiver dados corrompidos, loga o erro e continua para a próxima
+                logging.error(
+                    f"Não foi possível processar a reserva ID {r.get('id', 'N/A')} para o histórico do cliente: {e}")
+                continue  # Pula para a próxima iteração do loop
+
+            textbox.configure(state="disabled")
 
 # --- CLASSE PRINCIPAL DA VISÃO DE CLIENTES ---
 class ClientView(ctk.CTkFrame):
@@ -219,7 +242,7 @@ class ClientView(ctk.CTkFrame):
         style.configure("Treeview.Heading", background="#565b5e", foreground="white", font=("Arial", 10, "bold"))
         style.map('Treeview', background=[('selected', '#22559b')])
 
-        self.tree = ttk.Treeview(content_frame, columns=("ID", "Nome", "NIF", "Email", "Telefone"), show="headings")
+        self.tree = ttk.Treeview(content_frame, columns=("ID", "Nome", "NIF", "Email", "Telefone", "CC"), show="headings")
 
         self.tree.heading("ID", text="ID", anchor="center")
         self.tree.column("ID", width=50, anchor="center")
@@ -231,6 +254,8 @@ class ClientView(ctk.CTkFrame):
         self.tree.column("Email", width=250)
         self.tree.heading("Telefone", text="Telefone")
         self.tree.column("Telefone", width=150)
+        self.tree.heading("CC", text="CC- Nº Cartão Cidadão")
+        self.tree.column("CC", width=150, anchor="center")
 
         self.tree.pack(pady=20, padx=10, fill="both", expand=True)
 
@@ -259,7 +284,7 @@ class ClientView(ctk.CTkFrame):
 
         clientes = db.listar_clientes()
         for c in clientes:
-            self.tree.insert("", "end", values=(c["id"], c["nome_completo"], c["nif"], c["email"], c["telefone"]))
+            self.tree.insert("", "end", values=(c["id"], c["nome_completo"], c["nif"], c["email"], c["telefone"], c["cc"]))
 
     def abrir_adicionar(self):
         FormularioCliente(self, self.controller)
@@ -282,13 +307,21 @@ class ClientView(ctk.CTkFrame):
         if not selected_item:
             messagebox.showwarning("Aviso", "Selecione um cliente para remover.")
             return
-        id_cliente = self.tree.item(selected_item)["values"][0]
 
-        if messagebox.askyesno("Confirmação",
-                               f"Tem certeza que deseja remover o cliente ID {id_cliente}? Esta ação não pode ser desfeita."):
-            db.deletar_cliente(id_cliente)
-            self.carregar_dados()
+        item_values = self.tree.item(selected_item)["values"]
+        id_cliente = item_values[0]
+        nome_cliente = item_values[1]
 
+        titulo_confirmacao= "Confirmação de Exclusão"
+        mensagem_confirmacao = f"Tem a certeza que deseja remover permanentemente o cliente:\n\n{nome_cliente} (ID: {id_cliente})?"
+
+        if messagebox.askyesno(titulo_confirmacao, mensagem_confirmacao):
+            if db.deletar_cliente(id_cliente):
+                messagebox.showinfo("Sucesso", "Cliente removido com sucesso.")
+                self.carregar_dados()
+            else:
+                messagebox.showerror("Erro",
+                                     "Não foi possível remover o cliente. Verifique se ele possui um histórico de reservas.")
 
     def importar_clientes(self):
         caminho_arquivo = filedialog.askopenfilename(
