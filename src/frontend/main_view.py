@@ -44,7 +44,7 @@ class MainView(ctk.CTkFrame):
 
         self.btn_reservas = ctk.CTkButton(self.menu_frame, text="Reservas", command=self.show_reservation_view)
         # Ajuste a ordem do grid conforme sua preferência
-        self.btn_reservas.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
+        self.btn_reservas.grid(row=5, column=0, padx=20, pady=10, sticky="sew")
 
         self.btn_logout = ctk.CTkButton(self.menu_frame, text="Logout", command=self.logout, fg_color="#c0392b",
                                         hover_color="#e74c3c")
