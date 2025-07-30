@@ -2,6 +2,7 @@ import customtkinter as ctk
 from .dashboard_view import DashboardView
 from .vehicle_view import VehicleView
 from .client_view import ClientView
+from .reservation_view import ReservationView
 from PIL import Image, ImageTk
 import os
 
@@ -41,6 +42,10 @@ class MainView(ctk.CTkFrame):
         self.btn_clientes = ctk.CTkButton(self.menu_frame, text="Clientes", command=self.show_clientes_view)
         self.btn_clientes.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
 
+        self.btn_reservas = ctk.CTkButton(self.menu_frame, text="Reservas", command=self.show_reservation_view)
+        # Ajuste a ordem do grid conforme sua preferência
+        self.btn_reservas.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
+
         self.btn_logout = ctk.CTkButton(self.menu_frame, text="Logout", command=self.logout, fg_color="#c0392b",
                                         hover_color="#e74c3c")
         self.btn_logout.grid(row=6, column=0, padx=20, pady=20, sticky="sew")
@@ -74,6 +79,9 @@ class MainView(ctk.CTkFrame):
     # NOVO: Placeholder para a função do botão de clientes
     def show_clientes_view(self):
         self.show_view(ClientView)
+
+    def show_reservation_view(self):
+        self.show_view(ReservationView)
 
     def logout(self):
         self.controller.show_login_view()

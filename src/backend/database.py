@@ -131,17 +131,42 @@ def atualizar_veiculo(id_veiculo, **kwargs):
 
 
 def deletar_veiculo(id_veiculo):
-    """Deleta um veículo, se ele não tiver reservas associadas."""
+    """
+    Remove um veículo do banco de dados. Retorna True em caso de sucesso,
+    False se o veículo tiver reservas (IntegrityError) ou outro erro ocorrer.
+    """
     sql = "DELETE FROM veiculos WHERE id = ?"
-    with conectar_bd() as conn:
-        try:
-            cursor = conn.cursor()
-            cursor.execute(sql, (id_veiculo,))
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            # Ocorre se uma chave estrangeira (reserva) aponta para este veículo
+    conn = None
+
+    try:
+        conn = conectar_bd()
+        if not conn:
+            logging.error("Não foi possível obter conexão com o banco de dados para deletar veículo.")
             return False
+
+        cursor = conn.cursor()
+        cursor.execute(sql, (id_veiculo,))
+        conn.commit()
+
+        # Se cursor.rowcount > 0, significa que a linha foi encontrada e deletada.
+        return cursor.rowcount > 0
+
+    except sqlite3.IntegrityError:
+        # Se o veículo tiver reservas, a FOREIGN KEY constraint vai falhar.
+        if conn:
+            conn.rollback()
+        logging.warning(f"Tentativa de deletar veículo ID {id_veiculo} com reservas associadas. Operação abortada.")
+        return False
+
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        logging.error(f"Erro de banco de dados ao tentar deletar veículo ID {id_veiculo}: {e}", exc_info=True)
+        return False
+
+    finally:
+        if conn:
+            conn.close()
 
 def buscar_veiculos_com_devolucao_hoje():
     hoje_str = date.today().strftime('%Y/%m/%d')
@@ -158,7 +183,7 @@ def buscar_veiculos_com_devolucao_hoje():
 
 def buscar_reservas_por_veiculo(id_veiculo):
     sql = """
-        SELECT r.data_inicio, r.data_fim, c.nome_completo, c.nif
+        SELECT r.data_inicio, r.data_fim, r.status, c.nome_completo, c.nif
         FROM reservas r
         JOIN clientes c ON r.id_cliente = c.id
         WHERE r.id_veiculo = ? ORDER BY r.data_inicio DESC
@@ -179,19 +204,21 @@ def buscar_veiculo_por_id(id_veiculo):
 # --- CRUD: Clientes ---
 def adicionar_cliente(nome_completo, nif, telefone, email, cc, cursor=None):
     sql = "INSERT INTO clientes (nome_completo, nif, telefone, email, cc) VALUES (?, ?, ?, ?, ?)"
-    if conn is None:
-        try:
-            with conectar_bd() as conn_local:
-                conn_local.execute(sql, (nome_completo, nif, telefone, email, cc))
+    try:
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
+            # O 'try...except' para a falha de integridade fica DENTRO do 'with'
+            try:
+                cursor.execute(sql, (nome_completo, nif, telefone, email, cc))
+                # O commit é automático ao sair do 'with' sem erros
                 return True
-        except sqlite3.IntegrityError:
-            return False
-    else:
-        try:
-            conn.execute(sql, (nome_completo, nif, telefone, email, cc))
-            return True
-        except sqlite3.IntegrityError:
-            return False
+            except sqlite3.IntegrityError:
+                logging.warning(f"Falha ao adicionar cliente. Dados duplicados (NIF, Email ou CC) para: {nif}/{email}")
+                return False
+    except sqlite3.Error as e:
+        # Captura erros de conexão ou outros erros do SQLite
+        logging.error(f"Erro de banco de dados ao tentar adicionar cliente: {e}", exc_info=True)
+        return False
 
 def listar_clientes():
     sql = "SELECT * FROM clientes ORDER BY nome_completo"
@@ -212,12 +239,46 @@ def atualizar_cliente(id_cliente, **kwargs):
 
 
 def deletar_cliente(id_cliente):
+    """
+    Remove um cliente do banco de dados. Retorna True em caso de sucesso,
+    False se o cliente tiver reservas (IntegrityError) ou outro erro ocorrer.
+    """
     sql = "DELETE FROM clientes WHERE id = ?"
-    with conectar_bd() as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql, (id_cliente,))
-        conn.commit()
+    conn = None  # Inicia a variável de conexão como None
 
+    try:
+        # Etapa 1: Tenta obter uma conexão
+        conn = conectar_bd()
+        if not conn:
+            logging.error("Não foi possível obter conexão com o banco de dados para deletar cliente.")
+            return False
+
+        cursor = conn.cursor()
+
+        # Etapa 2: Executa a operação que pode falhar
+        cursor.execute(sql, (id_cliente,))
+        conn.commit()  # Faz o commit explícito se a execução for bem-sucedida
+
+        return True
+
+    except sqlite3.IntegrityError:
+        # Etapa 3: Captura a falha específica de chave estrangeira
+        if conn:
+            conn.rollback()  # Desfaz a transação que falhou
+        logging.warning(f"Tentativa de deletar cliente ID {id_cliente} com reservas associadas. Operação abortada.")
+        return False
+
+    except sqlite3.Error as e:
+        # Etapa 4: Captura qualquer outro erro do banco de dados
+        if conn:
+            conn.rollback()
+        logging.error(f"Erro de banco de dados ao tentar deletar cliente ID {id_cliente}: {e}", exc_info=True)
+        return False
+
+    finally:
+        # Etapa 5: Garante que a conexão seja sempre fechada
+        if conn:
+            conn.close()
 
 # --- CRUD: Reservas ---
 
@@ -248,32 +309,29 @@ def adicionar_reserva(id_cliente, id_veiculo, id_forma_pagamento, data_inicio, d
 
             valor_diaria = veiculo['valor_diaria']
             # Assume que o formato da data já está correto (YYYY-MM-DD)
-            d_inicio = datetime.strptime(data_inicio, '%Y-%m-%d')
-            d_fim = datetime.strptime(data_fim, '%Y-%m-%d')
+            d_inicio = datetime.strptime(data_inicio, '%Y-%m-%d %H:%M:%S')
+            d_fim = datetime.strptime(data_fim, '%Y-%m-%d %H:%M:%S')
+
             num_dias = (d_fim - d_inicio).days
-            if num_dias <= 0:
-                logging.error("Erro: A data de fim deve ser posterior à data de início.", exc_info=True)
+            if num_dias < 0:  # Uma reserva pode ser de 0 dias (retirada e entrega no mesmo dia)
                 return False
 
-            valor_total = valor_diaria * num_dias
-
+            # Garante pelo menos 1 dia de cobrança
+            dias_cobranca = num_dias if num_dias > 0 else 1
+            valor_total = veiculo['valor_diaria'] * dias_cobranca
 
             cursor.execute(sql_insert_reserva,
                            (id_cliente, id_veiculo, id_forma_pagamento, data_inicio, data_fim, valor_total))
-
-            cursor.execute(sql_update_veiculo, (id_veiculo,))
+            #cursor.execute(sql_update_veiculo, (id_veiculo,))
 
             return True
 
-    except sqlite3.IntegrityError as e:
-        # Ocorre se id_cliente ou outra FK for inválida. O rollback é automático com 'with' em caso de exceção.
-        logging.error(f"Erro de integridade ao criar reserva: {e}", exc_info=True)
-        return False
-    except (ValueError, Exception) as e:
-        # Captura outros erros (ex: formato de data inválido)
-        logging.error(f"Um erro inesperado ocorreu ao criar a reserva: {e}", exc_info=True)
-        return False
 
+    except (ValueError, Exception) as e:
+
+        logging.error(f"Um erro inesperado ocorreu ao criar a reserva: {e}", exc_info=True)
+
+        return False
 
 def listar_reservas():
     sql = "SELECT * FROM reservas ORDER BY data_inicio DESC"
@@ -283,22 +341,43 @@ def listar_reservas():
         return cursor.fetchall()
 
 
-def atualizar_reserva(id_reserva, **kwargs):
-    campos = ", ".join([f"{chave} = ?" for chave in kwargs.keys()])
-    valores = list(kwargs.values()) + [id_reserva]
-    sql = f"UPDATE reservas SET {campos} WHERE id = ?"
-    with conectar_bd() as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql, valores)
-        conn.commit()
+def atualizar_reserva(reserva_id, nova_data_inicio, nova_data_fim):
+    """
+    Atualiza as datas de uma reserva após verificar a disponibilidade do veículo,
+    ignorando a própria reserva na verificação de conflitos.
+    """
+    # 1. Pega o ID do veículo da reserva que estamos editando
+    reserva_atual = buscar_reserva_por_id(reserva_id)
+    if not reserva_atual:
+        return False, "Reserva não encontrada."
+    id_veiculo = reserva_atual['id_veiculo']
 
+    # 2. Verifica a disponibilidade, ignorando a própria reserva
+    if not verificar_disponibilidade_veiculo(id_veiculo, nova_data_inicio, nova_data_fim, id_reserva_existente=reserva_id):
+        return False, "Conflito de datas. O veículo não está disponível no novo período solicitado."
 
-def deletar_reserva(id_reserva):
+    # 3. Se não houver conflito, atualiza a reserva
+    sql = "UPDATE reservas SET data_inicio = ?, data_fim = ? WHERE id = ?"
+    try:
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, (nova_data_inicio, nova_data_fim, reserva_id))
+            return True, "Reserva atualizada com sucesso."
+    except sqlite3.Error as e:
+        logging.error(f"Erro ao atualizar reserva ID {reserva_id}: {e}", exc_info=True)
+        return False, "Ocorreu um erro no banco de dados."
+
+def deletar_reserva(reserva_id):
+    """Deleta uma reserva do banco de dados."""
     sql = "DELETE FROM reservas WHERE id = ?"
-    with conectar_bd() as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql, (id_reserva,))
-        conn.commit()
+    try:
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, (reserva_id,))
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Erro ao deletar reserva ID {reserva_id}: {e}", exc_info=True)
+        return False
 
 # Em src/backend/database.py
 def buscar_reservas_por_cliente(id_cliente):
@@ -486,7 +565,7 @@ def verificar_disponibilidade_veiculo(id_veiculo, data_inicio, data_fim, id_rese
     """
     sql = """
         SELECT COUNT(*) FROM reservas
-        WHERE id_veiculo = ? AND (
+        WHERE id_veiculo = ? AND status != 'cancelada' AND (
             (data_inicio <= ? AND data_fim >= ?) OR -- Reserva existente engloba o novo período
             (data_inicio >= ? AND data_inicio <= ?) OR -- Início da nova reserva conflita
             (data_fim >= ? AND data_fim <= ?) -- Fim da nova reserva conflita
@@ -503,3 +582,35 @@ def verificar_disponibilidade_veiculo(id_veiculo, data_inicio, data_fim, id_rese
         cursor.execute(sql, params)
         conflitos = cursor.fetchone()[0]
         return conflitos == 0
+
+def listar_todas_reservas_detalhadas():
+    """
+    Lista todas as reservas com detalhes do cliente e do veículo.
+    """
+    sql = """
+        SELECT
+            r.id AS reserva_id,
+            r.data_inicio,
+            r.data_fim,
+            r.status,
+            c.nome_completo AS cliente_nome,
+            v.marca,
+            v.modelo,
+            v.placa
+        FROM reservas r
+        JOIN clientes c ON r.id_cliente = c.id
+        JOIN veiculos v ON r.id_veiculo = v.id
+        ORDER BY r.data_inicio DESC
+    """
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        return cursor.fetchall()
+
+def buscar_reserva_por_id(reserva_id):
+    """Busca uma única reserva pelos seus detalhes."""
+    sql = "SELECT * FROM reservas WHERE id = ?"
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (reserva_id,))
+        return cursor.fetchone()
