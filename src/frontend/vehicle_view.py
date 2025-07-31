@@ -1,5 +1,3 @@
-# src/frontend/vehicle_view.py
-
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from PIL import Image
@@ -7,6 +5,7 @@ import os
 import re
 from datetime import datetime
 from backend import database as db
+import pandas as pd
 
 
 # --- CLASSE PARA O FORMULÁRIO DE ADICIONAR/EDITAR (BOA PRÁTICA) ---
@@ -185,6 +184,7 @@ class VehicleView(ctk.CTkFrame):
         ctk.CTkButton(button_frame, text="Importar Frota (CSV)", command=self.importar_frota).pack(side="left", padx=10)
         ctk.CTkButton(button_frame, text="Exportar para Excel", command=self.exportar_para_excel).pack(side="right",
                                                                                                        padx=10)
+        ctk.CTkButton(button_frame, text="Ver Histórico", command=self.ver_historico_veiculo).pack(side="left", padx=10)
 
         self.carregar_dados()
 
@@ -273,11 +273,12 @@ class VehicleView(ctk.CTkFrame):
         id_veiculo = self.tree.item(selected_item)["values"][0]
 
         if messagebox.askyesno("Confirmação", f"Tem certeza que deseja remover o veículo ID {id_veiculo}?"):
-            if not db.deletar_veiculo(id_veiculo):
-                messagebox.showerror("Erro", "Não é possível remover um veículo com reservas associadas.")
-            else:
+            if db.deletar_veiculo(id_veiculo):
                 messagebox.showinfo("Sucesso", "Veículo removido com sucesso.")
                 self.carregar_dados()
+            else:
+                messagebox.showerror("Erro",
+                                     "Não foi possível remover o veículo. Verifique se ele possui um histórico de reservas.")
 
     def importar_frota(self):
         caminho_arquivo = filedialog.askopenfilename(
@@ -317,3 +318,90 @@ class VehicleView(ctk.CTkFrame):
             messagebox.showinfo("Sucesso", f"Dados exportados com sucesso para:\n{caminho_arquivo}")
         except Exception as e:
             messagebox.showerror("Erro", f"Ocorreu um erro ao exportar os dados: {e}")
+
+    def ver_historico_veiculo(self):
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Aviso", "Selecione um veículo para ver o histórico.")
+            return
+
+        item_values = self.tree.item(selected_item)["values"]
+        id_veiculo = item_values[0]
+        nome_veiculo = f"{item_values[1]} {item_values[2]} (Placa: {item_values[3]})"
+
+        # Chama a nova janela para exibir o histórico
+        HistoricoVeiculoWindow(self, id_veiculo, nome_veiculo)
+
+
+class HistoricoVeiculoWindow(ctk.CTkToplevel):
+    def __init__(self, parent, id_veiculo, nome_veiculo):
+        super().__init__(parent)
+        self.title(f"Histórico de Aluguéis - {nome_veiculo}")
+        self.geometry("800x450")
+        self.grab_set()
+
+        reservas = db.buscar_reservas_por_veiculo(id_veiculo)
+
+        label = ctk.CTkLabel(self, text=f"Histórico para: {nome_veiculo}", font=("Arial", 16, "bold"))
+        label.pack(pady=10)
+
+        if not reservas:
+            ctk.CTkLabel(self, text="Este veículo nunca foi alugado.", font=("Arial", 14)).pack(pady=20)
+            return
+
+        # Cria uma frame para a tabela para poder adicionar scrollbars
+        table_frame = ctk.CTkFrame(self)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Configura o Treeview
+        style = ttk.Style()
+        style.configure("Hist.Treeview", rowheight=25)  # Aumenta a altura da linha
+        style.configure("Hist.Treeview.Heading", font=("Arial", 10, "bold"))
+
+        tree = ttk.Treeview(table_frame,
+                            columns=("Cliente", "NIF", "Início", "Fim", "Status"),
+                            show="headings", style="Hist.Treeview")
+
+        tree.heading("Cliente", text="Cliente")
+        tree.heading("NIF", text="NIF Cliente")
+        tree.heading("Início", text="Data de Início")
+        tree.heading("Fim", text="Data de Fim")
+        tree.heading("Status", text="Status da Reserva")
+
+        tree.column("Cliente", width=250)
+        tree.column("NIF", width=120, anchor="center")
+        tree.column("Início", width=150, anchor="center")
+        tree.column("Fim", width=150, anchor="center")
+        tree.column("Status", width=120, anchor="center")
+
+        tree.pack(side="left", fill="both", expand=True)
+
+        # Adiciona Scrollbar
+        scrollbar = ctk.CTkScrollbar(table_frame, command=tree.yview)
+        scrollbar.pack(side="right", fill="y")
+        tree.configure(yscrollcommand=scrollbar.set)
+
+        # Popula a tabela
+        for r in reservas:
+            inicio_f = self.formatar_data_flexivel(r['data_inicio'])
+            fim_f = self.formatar_data_flexivel(r['data_fim'])
+            tree.insert("", "end", values=(r['nome_completo'], r['nif'], inicio_f, fim_f, r['status'].title()))
+
+    def formatar_data_flexivel(self, data_str):
+        """
+        Tenta formatar uma string de data, tentando múltiplos formatos.
+        Retorna a data formatada ou uma string de erro.
+        """
+        if not data_str:
+            return "N/A"
+
+        # Tenta o formato completo primeiro
+        try:
+            return datetime.strptime(data_str, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y')
+        except ValueError:
+            # Se falhar, tenta o formato de apenas data
+            try:
+                return datetime.strptime(data_str, '%Y-%m-%d').strftime('%d/%m/%Y')
+            except ValueError:
+                # Se ambos falharem, retorna um erro claro
+                return "Formato Inválido"

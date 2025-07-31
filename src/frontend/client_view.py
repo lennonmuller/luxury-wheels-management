@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, date
-
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from backend import database as db
@@ -8,6 +7,7 @@ import os
 from datetime import datetime, timedelta
 import re
 from utils.helpers import  parse_datestr_flexible
+import pandas as pd
 
 
 class FormularioCliente(ctk.CTkToplevel):
@@ -275,6 +275,8 @@ class ClientView(ctk.CTkFrame):
             side="left", padx=10)
         ctk.CTkButton(action_button_frame, text="Criar Reserva para Cliente", command=self.abrir_criar_reserva,
                       fg_color="#1f6aa5", hover_color="#144870").pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Exportar Clientes (CSV)", command=self.exportar_clientes).pack(side="left",
+                                                                                                         padx=10)
 
         self.carregar_dados()
 
@@ -366,4 +368,34 @@ class ClientView(ctk.CTkFrame):
 
         CriarReservaWindow(self, self.controller, id_cliente, nome_cliente)
 
+    def exportar_clientes(self):
+        # 1. Busca os dados mais recentes do banco
+        clientes = db.listar_clientes()
+        if not clientes:
+            messagebox.showinfo("Informação", "Não há clientes para exportar.")
+            return
 
+        # 2. Converte a lista de objetos 'Row' do SQLite para um formato que o Pandas entende bem
+        dados_clientes = [dict(cliente) for cliente in clientes]
+        df = pd.DataFrame(dados_clientes)
+
+        # 3. Pede ao usuário para escolher onde salvar o arquivo
+        caminho_arquivo = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("Arquivos CSV", "*.csv"), ("Todos os arquivos", "*.*")],
+            title="Salvar lista de clientes como..."
+        )
+
+        if not caminho_arquivo:
+            # O usuário clicou em "Cancelar"
+            return
+
+        # 4. Tenta exportar os dados para o arquivo CSV
+        try:
+            # Usamos sep=';' que é mais compatível com o Excel em configurações europeias
+            # encoding='utf-8-sig' garante que caracteres especiais (acentos) funcionem bem
+            df.to_csv(caminho_arquivo, index=False, sep=';', encoding='utf-8-sig')
+            messagebox.showinfo("Sucesso", f"Lista de clientes exportada com sucesso para:\n{caminho_arquivo}")
+        except Exception as e:
+            logging.error(f"Erro ao exportar lista de clientes: {e}", exc_info=True)
+            messagebox.showerror("Erro de Exportação", f"Ocorreu um erro ao salvar o arquivo: {e}")
