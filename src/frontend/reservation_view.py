@@ -1,8 +1,10 @@
 import customtkinter as ctk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from backend import database as db
 from utils.helpers import parse_datestr_flexible
 from datetime import datetime
+import pandas as pd
+import logging
 
 
 class ReservationView(ctk.CTkFrame):
@@ -17,7 +19,7 @@ class ReservationView(ctk.CTkFrame):
         table_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
         # Treeview
-        columns = ("ID", "Cliente", "Veículo", "Placa", "Início", "Fim", "Status")
+        columns = ("ID", "Cliente", "Veículo", "Placa", "Início", "Fim", "Status", "Forma de Pagamento")
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
         for col in columns:
             self.tree.heading(col, text=col)
@@ -34,6 +36,8 @@ class ReservationView(ctk.CTkFrame):
         ctk.CTkButton(button_frame, text="Editar Reserva", command=self.abrir_editar_reserva).pack(side="left", padx=10)
         ctk.CTkButton(button_frame, text="Cancelar/Remover Reserva", command=self.cancelar_reserva, fg_color="#c0392b",
                       hover_color="#e74c3c").pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Exportar Reservas (CSV)", command=self.exportar_reservas).pack(side="left",
+                                                                                                         padx=10)
 
         self.carregar_dados()
 
@@ -48,7 +52,7 @@ class ReservationView(ctk.CTkFrame):
 
             self.tree.insert("", "end", values=(
                 r['reserva_id'], r['cliente_nome'], veiculo,
-                r['placa'], inicio_f, fim_f, r['status'].title()
+                r['placa'], inicio_f, fim_f, r['status'], r['forma_pagamento'].title()
             ))
 
     def abrir_editar_reserva(self):
@@ -74,6 +78,63 @@ class ReservationView(ctk.CTkFrame):
                 self.carregar_dados()
             else:
                 messagebox.showerror("Erro", "Não foi possível cancelar a reserva.")
+
+    def exportar_reservas(self):
+        # 1. Busca os dados mais recentes do banco
+        reservas = db.listar_todas_reservas_detalhadas()
+        if not reservas:
+            messagebox.showinfo("Informação", "Não há reservas para exportar.")
+            return
+
+        # 2. Converte para um DataFrame do Pandas
+        dados_reservas = [dict(reserva) for reserva in reservas]
+        df = pd.DataFrame(dados_reservas)
+
+        # 3. Limpeza e Renomeação de Colunas para o relatório final
+        df.rename(columns={
+            'reserva_id': 'ID da Reserva',
+            'cliente_nome': 'Cliente',
+            'cliente_nif': 'NIF do Cliente',
+            'marca': 'Marca do Veículo',
+            'modelo': 'Modelo do Veículo',
+            'placa': 'Placa',
+            'data_inicio': 'Data de Início',
+            'data_fim': 'Data de Fim',
+            'valor_total': 'Valor Total (€)',
+            'status': 'Status',
+            'forma_pagamento': 'Forma de Pagamento'
+        }, inplace=True)
+
+        try:
+            df['Data de Início'] = df['Data de Início'].apply(
+                lambda x: parse_datestr_flexible(x).strftime('%d/%m/%Y %H:%M') if x else '')
+            df['Data de Fim'] = df['Data de Fim'].apply(
+                lambda x: parse_datestr_flexible(x).strftime('%d/%m/%Y %H:%M') if x else '')
+        except Exception as e:
+            logging.error(f"Erro ao formatar datas para exportação: {e}", exc_info=True)
+            messagebox.showerror("Erro de Dados",
+                                 "Ocorreu um erro ao formatar as datas para o relatório. Verifique os logs.")
+            return
+
+        # 5. Pede ao usuário para escolher onde salvar
+        caminho_arquivo = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("Arquivos CSV", "*.csv"), ("Arquivos Excel", "*.xlsx")],
+            title="Salvar relatório de reservas como..."
+        )
+        if not caminho_arquivo: return
+
+        # 6. Tenta exportar para o formato escolhido
+        try:
+            if caminho_arquivo.endswith('.xlsx'):
+                df.to_excel(caminho_arquivo, index=False, engine='openpyxl')
+            else:
+                df.to_csv(caminho_arquivo, index=False, sep=';', encoding='utf-8-sig')
+
+            messagebox.showinfo("Sucesso", f"Relatório de reservas exportado com sucesso para:\n{caminho_arquivo}")
+        except Exception as e:
+            logging.error(f"Erro ao exportar relatório de reservas: {e}", exc_info=True)
+            messagebox.showerror("Erro de Exportação", f"Ocorreu um erro ao salvar o arquivo: {e}")
 
 
 class EditarReservaWindow(ctk.CTkToplevel):
@@ -119,3 +180,4 @@ class EditarReservaWindow(ctk.CTkToplevel):
             self.destroy()
         else:
             messagebox.showerror("Erro", mensagem)
+

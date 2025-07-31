@@ -585,21 +585,26 @@ def verificar_disponibilidade_veiculo(id_veiculo, data_inicio, data_fim, id_rese
 
 def listar_todas_reservas_detalhadas():
     """
-    Lista todas as reservas com detalhes do cliente e do veículo.
+    Lista todas as reservas com detalhes do cliente, do veículo e da forma de pagamento.
     """
     sql = """
         SELECT
             r.id AS reserva_id,
             r.data_inicio,
             r.data_fim,
+            r.valor_total,
             r.status,
             c.nome_completo AS cliente_nome,
+            c.nif AS cliente_nif,
             v.marca,
             v.modelo,
-            v.placa
+            v.placa,
+            fp.nome AS forma_pagamento
         FROM reservas r
         JOIN clientes c ON r.id_cliente = c.id
         JOIN veiculos v ON r.id_veiculo = v.id
+        -- CORREÇÃO: Usar 'id_forma_pagamento' (singular)
+        LEFT JOIN formas_pagamento fp ON r.id_forma_pagamento = fp.id 
         ORDER BY r.data_inicio DESC
     """
     with conectar_bd() as conn:
