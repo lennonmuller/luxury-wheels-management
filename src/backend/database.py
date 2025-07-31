@@ -88,37 +88,34 @@ def adicionar_veiculo(marca, modelo, ano, placa, cor, valor_diaria, data_proxima
 
 def listar_veiculos():
     """
-    Retorna uma lista de todos os veículos, incluindo um campo dinâmico
-    'status_dinamico' se o veículo estiver alugado hoje.
+    Retorna uma lista de todos os veículos, com um 'status_operacional' calculado.
+    Estados: Manutenção, Alugado, Devolução Hoje, Reservado, Disponível.
     """
-    hoje = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    hoje_inicio = datetime.now().strftime('%Y-%m-%d 00:00:00')
+    hoje_fim = datetime.now().strftime('%Y-%m-%d 23:59:59')
+    limite_reserva = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d 23:59:59')
+
     sql = """
         SELECT 
-            v.id,
-            v.marca,
-            v.modelo,
-            v.ano,
-            v.placa,
-            v.cor,
-            v.valor_diaria,
-            v.data_proxima_revisao,
-            v.imagem_path,
-            CASE 
-                WHEN r.id IS NOT NULL THEN 'Alugado'
-                ELSE v.status -- Mantém o status original (ex: 'manutenção')
-            END AS status_dinamico,
-            r.data_fim AS data_retorno
+            v.id, v.marca, v.modelo, v.ano, v.placa, v.cor, v.valor_diaria, v.data_proxima_revisao, v.imagem_path,
+            CASE
+                WHEN v.status = 'manutenção' THEN 'Manutenção'
+                WHEN r_hoje.id IS NOT NULL THEN 'Alugado'
+                WHEN r_devolucao.id IS NOT NULL THEN 'Devolução Hoje'
+                WHEN r_futuro.id IS NOT NULL THEN 'Reservado'
+                ELSE 'Disponível'
+            END AS status_operacional,
+            COALESCE(r_hoje.data_fim, r_devolucao.data_fim) AS data_retorno
         FROM veiculos v
-        LEFT JOIN reservas r ON v.id = r.id_veiculo 
-                             AND r.status = 'ativa' 
-                             AND ? BETWEEN r.data_inicio AND r.data_fim
+        LEFT JOIN reservas r_hoje ON v.id = r_hoje.id_veiculo AND r_hoje.status = 'ativa' AND ? BETWEEN r_hoje.data_inicio AND r_hoje.data_fim
+        LEFT JOIN reservas r_devolucao ON v.id = r_devolucao.id_veiculo AND r_devolucao.status = 'ativa' AND r_devolucao.data_fim BETWEEN ? AND ?
+        LEFT JOIN reservas r_futuro ON v.id = r_futuro.id_veiculo AND r_futuro.status = 'ativa' AND r_futuro.data_inicio > ? AND r_futuro.data_inicio <= ?
         ORDER BY v.marca, v.modelo
     """
     with conectar_bd() as conn:
         cursor = conn.cursor()
-        cursor.execute(sql, (hoje,))
+        cursor.execute(sql, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), hoje_inicio, hoje_fim, hoje_fim, limite_reserva))
         return cursor.fetchall()
-
 
 def atualizar_veiculo(id_veiculo, **kwargs):
     campos = ", ".join([f"{chave} = ?" for chave in kwargs.keys()])
@@ -619,3 +616,49 @@ def buscar_reserva_por_id(reserva_id):
         cursor = conn.cursor()
         cursor.execute(sql, (reserva_id,))
         return cursor.fetchone()
+
+def listar_ultimos_clientes(limite=5):
+    """
+    Busca os últimos 'limite' clientes cadastrados no sistema.
+    """
+    sql = "SELECT nome_completo, email, nif FROM clientes ORDER BY id DESC LIMIT ?"
+    with conectar_bd() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, (limite,))
+        return cursor.fetchall()
+
+
+def colocar_veiculos_revisao_em_manutencao():
+    """
+    Encontra todos os veículos com revisão vencida ou próxima (15 dias)
+    e muda seu status para 'manutenção'.
+    Retorna o número de veículos atualizados.
+    """
+    data_limite = (datetime.now() + timedelta(days=15)).strftime('%Y-%m-%d')
+
+    # Seleciona os IDs dos veículos que precisam de manutenção
+    sql_select_ids = "SELECT id FROM veiculos WHERE data_proxima_revisao <= ? AND status != 'manutenção'"
+
+    # Atualiza o status desses veículos
+    sql_update = "UPDATE veiculos SET status = 'manutenção' WHERE id IN ({})"
+
+    try:
+        with conectar_bd() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql_select_ids, (data_limite,))
+            ids_para_atualizar = [row['id'] for row in cursor.fetchall()]
+
+            if not ids_para_atualizar:
+                return 0  # Nenhum veículo para atualizar
+
+            # Cria os placeholders para a cláusula IN
+            placeholders = ','.join('?' for _ in ids_para_atualizar)
+            sql_update = sql_update.format(placeholders)
+
+            cursor.execute(sql_update, ids_para_atualizar)
+            conn.commit()
+
+            return cursor.rowcount
+    except sqlite3.Error as e:
+        logging.error(f"Erro ao colocar veículos em manutenção: {e}", exc_info=True)
+        return -1  # Indica um erro

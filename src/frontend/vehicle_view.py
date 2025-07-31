@@ -185,66 +185,79 @@ class VehicleView(ctk.CTkFrame):
         ctk.CTkButton(button_frame, text="Exportar para Excel", command=self.exportar_para_excel).pack(side="right",
                                                                                                        padx=10)
         ctk.CTkButton(button_frame, text="Ver Histórico", command=self.ver_historico_veiculo).pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="Revisão",
+                      command=self.gerir_status_revisao,
+                      fg_color="#5e35b1", hover_color="#4527a0").pack(side="right", padx=10)
 
+        self.tree.tag_configure('manutencao', background='#546E7A')  # Cinza Azulado
+        self.tree.tag_configure('reservado', background='#1E88E5')  # Azul
+        self.tree.tag_configure('alugado', background='#E53935')  # Vermelho
+        self.tree.tag_configure('devolucao_hoje', background='#FB8C00')
         self.carregar_dados()
 
     def carregar_dados(self):
-        # Limpa a tabela antes de carregar novos dados
+        # 1. Limpa a tabela para evitar duplicatas
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        # Busca os dados com a query explícita e robusta do backend
+        # 2. Busca a lista de veículos do backend (já com o status_operacional)
         veiculos = db.listar_veiculos()
 
+        # 3. Itera sobre cada veículo para preparar e inserir os dados
         for v in veiculos:
-            # Prepara cada variável de forma defensiva, tratando valores nulos (None)
+            # Pega o status calculado pelo backend. Usa '.title()' para capitalizar (ex: 'Disponível')
+            status_op = v['status_operacional'].title() if v['status_operacional'] else "Indefinido"
 
-            # 1. Status Dinâmico
-            status_final = v['status_dinamico'].title() if v['status_dinamico'] else "Indefinido"
+            # Define a tag de cor com base no status operacional
+            # As tags devem ser configuradas no __init__ da classe
+            tag = ''
+            if status_op == 'Manutenção':
+                tag = 'manutencao'
+            elif status_op == 'Reservado':
+                tag = 'reservado'
+            elif status_op == 'Alugado':
+                tag = 'alugado'  # Assume que você tem uma tag 'alugado'
+            elif status_op == 'Devolução Hoje':
+                tag = 'devolucao_hoje'
 
-            # 2. Data da Próxima Revisão
+            # Formatação defensiva da data de revisão
             data_revisao_str = ""
-            if v['data_proxima_revisao'] is not None:
+            if v['data_proxima_revisao']:
                 try:
-                    # Converte de 'AAAA-MM-DD' para 'DD/MM/AAAA'
                     data_revisao_str = datetime.strptime(v['data_proxima_revisao'], '%Y-%m-%d').strftime('%d/%m/%Y')
                 except (ValueError, TypeError):
-                    data_revisao_str = "Data Inválida"
+                    data_revisao_str = "Inválida"
             else:
-                data_revisao_str = "Não Definida"
+                data_revisao_str = "N/A"
 
-            # 3. Valor da Diária
-            valor_diaria_str = ""
+            # Formatação defensiva do valor da diária
+            valor_diaria_str = "N/A"
             if v['valor_diaria'] is not None:
-                # Formata para o padrão Euro com vírgula decimal
                 valor_diaria_str = f"€ {v['valor_diaria']:.2f}".replace('.', ',')
-            else:
-                valor_diaria_str = "N/A"
 
-            # 4. Data de Retorno
-            data_retorno_str = ""  # Padrão é vazio para carros não alugados
-            if status_final == 'Alugado' and v['data_retorno'] is not None:
+            # Formatação defensiva da data de retorno
+            data_retorno_str = ""
+            if v['data_retorno']:
                 try:
-                    # Converte de 'AAAA-MM-DD HH:MM:SS' para 'DD/MM/AAAA'
                     data_retorno_str = datetime.strptime(v['data_retorno'], '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y')
                 except (ValueError, TypeError):
-                    data_retorno_str = "Data Inválida"
+                    data_retorno_str = "Inválida"
 
-            # Monta a tupla de valores na ordem exata das colunas da TreeView
+            # Cria a tupla de valores na ordem exata das suas colunas
             # ORDEM: "ID", "Marca", "Modelo", "Placa", "Status", "Revisão", "Valor Diária", "Data Retorno"
             valores_para_inserir = (
                 v["id"],
                 v["marca"],
                 v["modelo"],
                 v["placa"],
-                status_final,
+                status_op,  # Usa o novo status operacional
                 data_revisao_str,
                 valor_diaria_str,
                 data_retorno_str
             )
 
-            # Insere a linha na tabela
-            self.tree.insert("", "end", values=valores_para_inserir)
+            # Insere a linha na tabela com os valores e a tag de cor
+            self.tree.insert("", "end", values=valores_para_inserir, tags=(tag,))
 
     def abrir_adicionar(self):
         FormularioVeiculo(self, self.controller)
@@ -331,6 +344,25 @@ class VehicleView(ctk.CTkFrame):
 
         # Chama a nova janela para exibir o histórico
         HistoricoVeiculoWindow(self, id_veiculo, nome_veiculo)
+
+    def gerir_status_revisao(self):
+        """
+        Chama a função do backend para colocar veículos em manutenção e atualiza a view.
+        """
+        if not messagebox.askyesno("Confirmação",
+                                   "Deseja verificar e colocar todos os veículos com revisão vencida ou próxima (15 dias) em status de 'Manutenção'?"):
+            return
+
+        num_atualizados = db.colocar_veiculos_revisao_em_manutencao()
+
+        if num_atualizados > 0:
+            messagebox.showinfo("Sucesso", f"{num_atualizados} veículo(s) foram atualizados para 'Manutenção'.")
+        elif num_atualizados == 0:
+            messagebox.showinfo("Informação", "Nenhum veículo necessitava de atualização de status.")
+        else:  # num_atualizados == -1
+            messagebox.showerror("Erro", "Ocorreu um erro ao atualizar os status. Verifique os logs.")
+
+        self.carregar_dados()
 
 
 class HistoricoVeiculoWindow(ctk.CTkToplevel):

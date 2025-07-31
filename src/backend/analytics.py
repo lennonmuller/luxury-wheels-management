@@ -4,15 +4,23 @@ from . import database as db
 
 def get_veiculos_df():
     """
-    Busca todos os veículos usando a função principal que já calcula o status dinâmico
-    e retorna como um DataFrame do Pandas.
+    Busca todos os veículos e retorna como um DataFrame do Pandas.
+    Usa o 'status_operacional' calculado pelo backend.
     """
     veiculos = db.listar_veiculos()
     if not veiculos:
         logging.warning("get_veiculos_df: Nenhum veículo encontrado.")
-        return pd.DataFrame(columns=['id', 'marca', 'modelo', 'status_dinamico'])
+        return pd.DataFrame()
+
     dados_veiculos = [dict(veiculo) for veiculo in veiculos]
-    return pd.DataFrame(dados_veiculos)
+    df = pd.DataFrame(dados_veiculos)
+
+    # REFINAMENTO: Renomeia 'status_operacional' para um nome final 'status'
+    # para simplificar o contrato com o frontend.
+    if 'status_operacional' in df.columns:
+        df.rename(columns={'status_operacional': 'status'}, inplace=True)
+
+    return df
 
 
 # Função para obter dados de reservas
@@ -61,4 +69,4 @@ def get_veiculos_por_status():
     if df_veiculos.empty:
         return pd.Series(dtype=int)
 
-    return df_veiculos['status_dinamico'].value_counts()
+    return df_veiculos['status'].value_counts()
