@@ -37,8 +37,7 @@ class DashboardView(ctk.CTkFrame):
         # --- Criar e posicionar os gráficos ---
         self.plotar_faturamento_mensal()
         self.plotar_veiculos_por_status()
-
-        #Chamada de alertas
+        self.criar_painel_ultimos_clientes()
         self.criar_secao_alertas()
 
         # Adicione chamadas para outros gráficos aqui
@@ -98,10 +97,43 @@ class DashboardView(ctk.CTkFrame):
         fig.tight_layout()
         self.plotar_grafico(fig, 0, 1)
 
+    def criar_painel_ultimos_clientes(self):
+        clientes_frame = ctk.CTkFrame(self)
+        clientes_frame.grid(row=1, column=0, padx=10, pady=10,sticky="nsew")
+
+        ctk.CTkLabel(clientes_frame, text="Ultimos clientes Registados", font=("Arial", 16, "bold")).pack(pady=(10, 5), padx=10, anchor="w")
+
+        ultimos_clientes = db.listar_ultimos_clientes(limite=5)
+
+        if not ultimos_clientes:
+            ctk.CTkLabel(clientes_frame, text="Nenhum cliente registado recentemente.").pack(pady=10, padx=10, anchor="w")
+            return
+
+        textbox = ctk.CTkTextbox(clientes_frame, state="normal", font=("Courier New", 11), activate_scrollbars=False)
+        textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        theme_colors = ctk.ThemeManager.theme
+        highlight_color = theme_colors["CTkButton"]["fg_color"][1]  # Pega a cor de hover do botão
+
+        textbox.tag_config("nome", foreground=highlight_color)
+        textbox.tag_config("label", foreground="gray")
+
+        for cliente in ultimos_clientes:
+            # Insere o nome do cliente com a tag de destaque
+            textbox.insert("end", f"{cliente['nome_completo']}\n", "nome")
+
+            # Insere os rótulos com uma cor mais suave
+            textbox.insert("end", "  NIF: ", "label")
+            textbox.insert("end", f"{cliente['nif']}\n")  # Insere o valor com a cor padrão
+            textbox.insert("end", "  Email: ", "label")
+            textbox.insert("end", f"{cliente['email']}\n\n")
+
+        textbox.configure(state="disabled")
+
     def criar_secao_alertas(self):
         """Cria e popula a área de alertas, agora com lógica no backend."""
         alertas_frame = ctk.CTkFrame(self)
-        alertas_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
+        alertas_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
 
         label_titulo = ctk.CTkLabel(alertas_frame, text="Painel de Controle de Revisões", font=("Arial", 16, "bold"))
         label_titulo.pack(pady=(10, 5), padx=10, anchor="w")
@@ -115,7 +147,7 @@ class DashboardView(ctk.CTkFrame):
             return
 
         # Usamos uma fonte monoespaçada para melhor alinhamento
-        textbox = ctk.CTkTextbox(alertas_frame, height=120, font=("Courier New", 12))
+        textbox = ctk.CTkTextbox(alertas_frame, height=220, font=("Courier New", 12))
         textbox.pack(pady=5, padx=10, fill="x", expand=True)
 
         # CORREÇÃO: Removido o argumento 'font' de tag_config
